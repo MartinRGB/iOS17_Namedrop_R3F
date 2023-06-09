@@ -169,7 +169,25 @@ const WaveMaterial =  shaderMaterial(
     }
 `);
 
-extend({BlurDownSampleMaterial,BlurUpSampleMaterial,WaveMaterial})
+const ParticleMaterial = shaderMaterial(
+    {
+        resolution:[600,600],
+        time:0,
+        buff_tex:null,
+    },
+    prefix_vertex + common_vertex_main,
+    prefix_frag + `
+    uniform float time;
+    uniform vec2 resolution;
+    uniform sampler2D buff_tex;
+
+    void main() {
+        gl_FragColor = texture(buff_tex,vUv);
+    }
+`
+);
+
+extend({BlurDownSampleMaterial,BlurUpSampleMaterial,WaveMaterial,ParticleMaterial})
 
 declare global {
     namespace JSX {
@@ -177,6 +195,7 @@ declare global {
             'blurDownSampleMaterial': React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
             'blurUpSampleMaterial': React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
             'waveMaterial': React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
+            'particleMaterial':React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
         }
     }
 }
@@ -194,6 +213,7 @@ const Interface = () => {
     const kawaseBlurMaterialRefC = useRef<ShaderMaterial | null>(null)
     const kawaseBlurMaterialRefD = useRef<ShaderMaterial | null>(null)
     const waveMaterialRef = useRef<ShaderMaterial | null>(null)
+    const partiMaterialRef = useRef<ShaderMaterial | null>(null)
 
     const FBOSettings ={
         format: THREE.RGBAFormat,
@@ -207,15 +227,17 @@ const Interface = () => {
     const kawaseBlurFBOB = useFBO(size.width,size.height,FBOSettings);
     const kawaseBlurFBOC = useFBO(size.width,size.height,FBOSettings);
     const kawaseBlurFBOD = useFBO(size.width,size.height,FBOSettings);
+    const waveFBO = useFBO(size.width,size.height,FBOSettings)
 
     // # create scenes for different FBOS
-    const [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD] = useMemo(() => {
+    const [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene] = useMemo(() => {
         const kawaseBlurSceneA = new THREE.Scene()
         const kawaseBlurSceneB = new THREE.Scene()
         const kawaseBlurSceneC = new THREE.Scene()
         const kawaseBlurSceneD = new THREE.Scene()
+        const waveScene = new THREE.Scene()
         
-        return [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD]
+        return [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene]
     }, []) 
 
     // #
@@ -235,7 +257,7 @@ const Interface = () => {
             kawaseBlurMaterialRefA.current.uniforms.buff_tex.value = wp;
             kawaseBlurMaterialRefA.current.uniforms.time.value = time;
 
-            // Pass 1 Buffer
+            // KawaseBlur Pass 1 Buffer
             gl.setRenderTarget(kawaseBlurFBOA);
             gl.render(kawaseBlurSceneA,camera)
             gl.setRenderTarget(null)
@@ -247,7 +269,7 @@ const Interface = () => {
             kawaseBlurMaterialRefB.current.uniforms.buff_tex.value = kawaseBlurFBOA.texture
             kawaseBlurMaterialRefB.current.uniforms.time.value = time;
 
-            // Pass 2 Buffer
+            // KawaseBlur Pass 2 Buffer
             gl.setRenderTarget(kawaseBlurFBOB);
             gl.render(kawaseBlurSceneB,camera)
             gl.setRenderTarget(null)
@@ -258,7 +280,7 @@ const Interface = () => {
             kawaseBlurMaterialRefC.current.uniforms.buff_tex.value = kawaseBlurFBOB.texture
             kawaseBlurMaterialRefC.current.uniforms.time.value = time;
 
-            // Pass 3 Buffer
+            // KawaseBlur Pass 3 Buffer
             gl.setRenderTarget(kawaseBlurFBOC);
             gl.render(kawaseBlurSceneC,camera)
             gl.setRenderTarget(null)
@@ -269,7 +291,7 @@ const Interface = () => {
             kawaseBlurMaterialRefD.current.uniforms.buff_tex.value = kawaseBlurFBOC.texture
             kawaseBlurMaterialRefD.current.uniforms.time.value = time;
 
-            // Pass 4 Buffer
+            // KawaseBlur Pass 4 Buffer
             gl.setRenderTarget(kawaseBlurFBOD);
             gl.render(kawaseBlurSceneD,camera)
             gl.setRenderTarget(null)
@@ -279,6 +301,17 @@ const Interface = () => {
         if(waveMaterialRef.current){
             waveMaterialRef.current.uniforms.buff_tex.value = kawaseBlurFBOD.texture
             waveMaterialRef.current.uniforms.time.value = time;
+
+            // Wave Pass Buffer
+            gl.setRenderTarget(waveFBO);
+            gl.render(waveScene,camera)
+            gl.setRenderTarget(null)
+        }
+
+        if(partiMaterialRef.current){
+            partiMaterialRef.current.uniforms.buff_tex.value = waveFBO.texture
+            partiMaterialRef.current.uniforms.time.value = time;
+
         }
 
 
@@ -310,9 +343,17 @@ const Interface = () => {
           </Plane>
         </>, kawaseBlurSceneD)}
 
-        <Plane args={[2, 2]}>
+        {createPortal(<>
+          <Plane args={[2, 2]}>
              <waveMaterial ref={waveMaterialRef}  />
-        </Plane>
+          </Plane>
+        </>, waveScene)}
+
+        <Plane args={[2, 2]}>
+             <particleMaterial ref={partiMaterialRef}  />
+          </Plane>
+        
+
 
     </>
     )
