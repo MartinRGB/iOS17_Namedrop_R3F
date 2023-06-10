@@ -2,6 +2,7 @@
 'use client'
 import Image from 'next/image'
 import { Effect } from './Effect'
+import { Stats } from "https://cdn.skypack.dev/@react-three/drei/Stats";
 
 export default function Home() {
   return (
@@ -25,14 +26,7 @@ export default function Home() {
           transformOrigin: 'center'
       }}/>
       <Image
-        style={{
-          visibility: 'visible',
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%) scale(0.75)',
-          transformOrigin: 'center'
-        }}
+        className='phone-img'
         src="/ip14_pro.png"
         width={876/2}
         height={1774/2}

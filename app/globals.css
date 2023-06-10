@@ -26,3 +26,11 @@ body {
     rgb(var(--background-start-rgb));
 }
 
+.phone-img {
+  visibility: visible !important;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, calc(-50% + 1px)) scale(0.748);
+  transform-origin: center;
+}

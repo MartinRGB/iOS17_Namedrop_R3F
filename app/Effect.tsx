@@ -4,6 +4,7 @@ import { Canvas, createPortal, extend, useFrame, useLoader, useThree, invalidate
 import { Plane, shaderMaterial, useFBO } from '@react-three/drei';
 import { ShaderMaterial, TextureLoader } from 'three';
 import * as THREE from 'three'
+import { Stats } from '@react-three/drei'
 
 const prefix_vertex = `
     varying vec2 vUv;
@@ -28,7 +29,69 @@ const prefix_frag = `
     varying vec2 vUv;
 `
 
-// # dual kawase blur downsale shader pass
+// # the 'pcg' hash method -> https://www.jcgt.org/published/0009/03/02/
+const hash_functions=`
+#define TWO_PI 6.283185
+// https://www.shadertoy.com/view/XlGcRh
+
+// https://www.pcg-random.org/
+uint pcg(uint v)
+{
+	uint state = v * 747796405u + 2891336453u;
+	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	return (word >> 22u) ^ word;
+}
+
+uvec2 pcg2d(uvec2 v)
+{
+    v = v * 1664525u + 1013904223u;
+
+    v.x += v.y * 1664525u;
+    v.y += v.x * 1664525u;
+
+    v = v ^ (v>>16u);
+
+    v.x += v.y * 1664525u;
+    v.y += v.x * 1664525u;
+
+    v = v ^ (v>>16u);
+
+    return v;
+}
+
+// http://www.jcgt.org/published/0009/03/02/
+uvec3 pcg3d(uvec3 v) {
+
+    v = v * 1664525u + 1013904223u;
+
+    v.x += v.y*v.z;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+
+    v ^= v >> 16u;
+
+    v.x += v.y*v.z;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+
+    return v;
+}
+
+
+float hash11(float p) {
+    return float(pcg(uint(p)))/4294967296.;
+}
+
+vec2 hash21(float p) {
+    return vec2(pcg2d(uvec2(p, 0)))/4294967296.;
+}
+
+vec3 hash33(vec3 p3) {
+    return vec3(pcg3d(uvec3(p3)))/4294967296.;
+}
+`
+
+// # dual kawase blur downscale sample shader pass
 const BlurDownSampleMaterial = shaderMaterial(
     {
       time: 0,
@@ -46,6 +109,7 @@ const BlurDownSampleMaterial = shaderMaterial(
             vec2 halfpixel = 0.5 / (resolution.xy / 2.0);
             float time_offset = (sin(time*4.) + 1.)/2.;
             float blur_offset = 6. * time_offset;
+            //blur_offset = 0.;
         
             vec4 sum;
             sum = texture(buff_tex, uv) * 4.0;
@@ -59,6 +123,7 @@ const BlurDownSampleMaterial = shaderMaterial(
     `
 );
 
+// # dual kawase blur upscale sample shader pass
 const BlurUpSampleMaterial = shaderMaterial(
 
     {
@@ -78,6 +143,7 @@ const BlurUpSampleMaterial = shaderMaterial(
             vec2 halfpixel = 0.5 / (resolution.xy * 2.0);
             float time_offset = (sin(time*4.) + 1.)/2.;
             float blur_offset = 6. * time_offset;
+            //blur_offset = 0.;
         
             vec4 sum;
             
@@ -95,6 +161,8 @@ const BlurUpSampleMaterial = shaderMaterial(
     `
 )
 
+// # the wave shader,the core concept is use distance() function to compare the fragCoord & wave_center,
+// # if the conditions are met,we use a pow() function to generate a wave shape in mathmatic,then map the function to the clamped distance(as x input)
 const WaveMaterial =  shaderMaterial(
     {
         time: 0,
@@ -169,6 +237,8 @@ const WaveMaterial =  shaderMaterial(
     }
 `);
 
+// # compare to standard 'centered grid sampling' & 'staggered grid sampling'
+// # this looks like a random sample in different grid 
 const ParticleMaterial = shaderMaterial(
     {
         resolution:[600,600],
@@ -176,18 +246,150 @@ const ParticleMaterial = shaderMaterial(
         buff_tex:null,
     },
     prefix_vertex + common_vertex_main,
-    prefix_frag + `
+    hash_functions + prefix_frag + `
     uniform float time;
     uniform vec2 resolution;
     uniform sampler2D buff_tex;
+    #define iTime time
+    #define iChannel0 buff_tex
+    #define iResolution resolution
+
+    const vec3 base_color = vec3(0.2, 0.3, 0.8);
+    const float speed = 1.;
+    const float burstRange = 150.;
+    const float length = 0.0035;
+
+    vec3 particleEffects(in vec2 fragCoord,in vec2 center){
+        center = iResolution.xy*center;
+
+        float c0 = 0., c1 = 0.;
+    
+        for(float i = 0.; i < 250.; ++i) {
+            float t = speed*iTime + hash11(i);
+    
+            // # use time generate noise,the parameter is just the seed number
+            vec2 v = hash21(i + 50.*floor(t));
+            // # from 0 to 1 normalize the noised time
+            t = fract(t);
+            
+            //v = vec2(sqrt(-2.*log(1.-v.x)), 6.283185*v.y);       
+            // # polar the coordnates
+            // # distance & emit around the center
+            v = burstRange*v.x*vec2(cos(v.y*10.), sin(v.y*10.));
+    
+            vec2 p = center + t*v - fragCoord;
+            // # the glow center
+            // c0 += 0.1*(1.-t)/(1. + 0.13*dot(p,p));
+    
+            p = p.yx;
+            v = v.yx;
+            p = vec2(
+                p.x/v.x,
+                p.y - p.x/v.x*v.y
+            );
+            
+            float a = abs(p.x) < length ? 50./abs(v.x) : 0.;
+            float b0 = max(2. - abs(p.y), 0.);
+            //float b1 = 0.2/(1.+0.0001*p.y*p.y);
+            c0 += (1.-t)*b0*a;
+            //c1 += (1.-t)*b1*a;
+            
+            // # accumulate particles,
+            c0 += (t)*b0*a;
+        }
+    
+        vec3 rgb = c0*base_color;
+        //rgb += hash33(vec3(fragCoord,iTime*256.))/512.;
+        rgb = pow(rgb, vec3(0.4545));  
+        return rgb;      
+    }
 
     void main() {
-        gl_FragColor = texture(buff_tex,vUv);
+        vec2 center = vec2(0.5,0.95);
+        vec3 particleColor = particleEffects(vUv*iResolution.xy,center);
+        gl_FragColor = texture(buff_tex,vUv) + vec4(particleColor,1.);
     }
 `
 );
 
-extend({BlurDownSampleMaterial,BlurUpSampleMaterial,WaveMaterial,ParticleMaterial})
+const ProceduralLightMaterial  = shaderMaterial(
+    {
+        resolution:[600,600],
+        time:0,
+        buff_tex:null,
+    },
+    prefix_vertex + common_vertex_main,
+    prefix_frag + `
+    
+    // by Nikos Papadopoulos, 4rknova / 2013
+    // Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
+
+    #define ENABLE_LIGHTING
+    #define ENABLE_SPECULAR
+
+    #define OFFSET_X 1
+    #define OFFSET_Y 1
+    #define DEPTH	 1.
+
+    uniform float time;
+    uniform vec2 resolution;
+    uniform sampler2D buff_tex;
+    #define iTime time
+    #define iChannel0 buff_tex
+    #define iResolution resolution
+
+    vec3 texsample(const int x, const int y, in vec2 fragCoord)
+    {
+        vec2 uv = fragCoord.xy ;
+        uv = (uv + vec2(x, y)) / resolution.xy;
+        return texture(iChannel0, uv).xyz;
+    }
+    
+    float luminance(vec3 c)
+    {
+        return dot(c, vec3(.2126, .7152, .0722));
+    }
+
+    vec3 normal(in vec2 fragCoord)
+    {
+        float R = abs(luminance(texsample( OFFSET_X,0, fragCoord)));
+        float L = abs(luminance(texsample(-OFFSET_X,0, fragCoord)));
+        float D = abs(luminance(texsample(0, OFFSET_Y, fragCoord)));
+        float U = abs(luminance(texsample(0,-OFFSET_Y, fragCoord)));
+                    
+        float X = (L-R) * .5;
+        float Y = (U-D) * .5;
+
+        return normalize(vec3(X, Y, 1. / DEPTH));
+    }
+
+    void main()
+    {
+        vec2 fragCoord = vUv * iResolution.xy;
+        vec3 n = normal(fragCoord);
+
+    #ifdef ENABLE_LIGHTING
+        vec3 lp = vec3(vec2(iResolution.x*0.5,iResolution.y*( 0.1 + (cos(iTime) + 1.)/2.)*0.88) , 200.); //iMouse.xy
+        vec3 sp = vec3(fragCoord.xy, 0.);
+        
+        vec3 c = texsample(0, 0, fragCoord) * dot(n, normalize(lp - sp));
+
+    #ifdef ENABLE_SPECULAR
+        float e = 16.;
+        vec3 ep = vec3(fragCoord.xy, 200.);
+        c += pow(clamp(dot(normalize(reflect(lp - sp, n)), normalize(sp - ep)), 0., 1.), e);
+    #endif /* ENABLE_SPECULAR */
+        
+    #else
+        vec3 c = n;
+        
+    #endif /* ENABLE_LIGHTING */
+        
+        gl_FragColor = mix(texture(buff_tex,vUv),vec4(c, 1),0.5);
+    }
+`)
+
+extend({BlurDownSampleMaterial,BlurUpSampleMaterial,WaveMaterial,ParticleMaterial,ProceduralLightMaterial})
 
 declare global {
     namespace JSX {
@@ -196,6 +398,7 @@ declare global {
             'blurUpSampleMaterial': React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
             'waveMaterial': React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
             'particleMaterial':React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
+            'proceduralLightMaterial':React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
         }
     }
 }
@@ -213,7 +416,8 @@ const Interface = () => {
     const kawaseBlurMaterialRefC = useRef<ShaderMaterial | null>(null)
     const kawaseBlurMaterialRefD = useRef<ShaderMaterial | null>(null)
     const waveMaterialRef = useRef<ShaderMaterial | null>(null)
-    const partiMaterialRef = useRef<ShaderMaterial | null>(null)
+    const particleMaterialRef = useRef<ShaderMaterial | null>(null)
+    const proceduralLightMaterialRef = useRef<ShaderMaterial | null>(null)
 
     const FBOSettings ={
         format: THREE.RGBAFormat,
@@ -228,22 +432,32 @@ const Interface = () => {
     const kawaseBlurFBOC = useFBO(size.width,size.height,FBOSettings);
     const kawaseBlurFBOD = useFBO(size.width,size.height,FBOSettings);
     const waveFBO = useFBO(size.width,size.height,FBOSettings)
+    const particleFBO = useFBO(size.width,size.height,FBOSettings)
 
     // # create scenes for different FBOS
-    const [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene] = useMemo(() => {
+    const [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,particleScene] = useMemo(() => {
         const kawaseBlurSceneA = new THREE.Scene()
         const kawaseBlurSceneB = new THREE.Scene()
         const kawaseBlurSceneC = new THREE.Scene()
         const kawaseBlurSceneD = new THREE.Scene()
         const waveScene = new THREE.Scene()
+        const particleScene = new THREE.Scene()
         
-        return [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene]
+        return [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,particleScene]
     }, []) 
 
     // #
     useEffect(()=>{
         if(waveMaterialRef.current){
-            waveMaterialRef.current.uniforms.resolution.value = new THREE.Vector2(size.width,size.height)
+            waveMaterialRef.current.uniforms.resolution.value = new THREE.Vector2(size.width,size.height);
+        }
+
+        if(particleMaterialRef.current){
+            particleMaterialRef.current.uniforms.resolution.value = new THREE.Vector2(size.width,size.height);
+        }
+
+        if(proceduralLightMaterialRef.current){
+            proceduralLightMaterialRef.current.uniforms.resolution.value = new THREE.Vector2(size.width,size.height);
         }
 
     },[])
@@ -308,10 +522,20 @@ const Interface = () => {
             gl.setRenderTarget(null)
         }
 
-        if(partiMaterialRef.current){
-            partiMaterialRef.current.uniforms.buff_tex.value = waveFBO.texture
-            partiMaterialRef.current.uniforms.time.value = time;
+        if(particleMaterialRef.current){
+            particleMaterialRef.current.uniforms.buff_tex.value = waveFBO.texture
+            particleMaterialRef.current.uniforms.time.value = time;
+            
+            // Particle Pass Buffer
+            gl.setRenderTarget(particleFBO);
+            gl.render(particleScene,camera)
+            gl.setRenderTarget(null)
+        }
 
+        // ProceduralLightMaterialRef Pass
+        if(proceduralLightMaterialRef.current){
+            proceduralLightMaterialRef.current.uniforms.buff_tex.value = particleFBO.texture; //particleFBO.texture
+            proceduralLightMaterialRef.current.uniforms.time.value = time;
         }
 
 
@@ -349,11 +573,16 @@ const Interface = () => {
           </Plane>
         </>, waveScene)}
 
-        <Plane args={[2, 2]}>
-             <particleMaterial ref={partiMaterialRef}  />
+        {createPortal(<>
+          <Plane args={[2, 2]}>
+             <particleMaterial ref={particleMaterialRef}  />
           </Plane>
-        
+        </>, particleScene)}
 
+        <Plane args={[2, 2]}>
+            <proceduralLightMaterial ref={proceduralLightMaterialRef}  />
+        </Plane>
+        
 
     </>
     )
@@ -361,10 +590,13 @@ const Interface = () => {
 }
 
 export const Effect = (props:any) =>{
+
+
   return(
   <Canvas className={props.className} style={{...props.style}}>
     <ambientLight />
     <Interface />
+    <Stats />
   </Canvas>
   )
 }
