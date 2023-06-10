@@ -5,6 +5,8 @@ import { Plane, shaderMaterial, useFBO } from '@react-three/drei';
 import { ShaderMaterial, TextureLoader } from 'three';
 import * as THREE from 'three'
 import { Stats } from '@react-three/drei'
+import { useControls } from 'leva'
+
 
 const prefix_vertex = `
     varying vec2 vUv;
@@ -97,18 +99,22 @@ const BlurDownSampleMaterial = shaderMaterial(
       time: 0,
       buff_tex: null,
       resolution: [600, 600],
+      blurOffset:6.,
+      pixelOffset:0.5
     },
     prefix_vertex + common_vertex_main,
     prefix_frag + `
         uniform float time;
         uniform vec2 resolution;
         uniform sampler2D buff_tex;
+        uniform float blurOffset;
+        uniform float pixelOffset;
     
         void main() {
             vec2 uv = vUv*2.0;
-            vec2 halfpixel = 0.5 / (resolution.xy / 2.0);
+            vec2 halfpixel = pixelOffset / (resolution.xy / 2.0);
             float time_offset = (sin(time*4.) + 1.)/2.;
-            float blur_offset = 6. * time_offset;
+            float blur_offset = blurOffset;
             //blur_offset = 0.;
         
             vec4 sum;
@@ -130,19 +136,23 @@ const BlurUpSampleMaterial = shaderMaterial(
         time: 0,
         buff_tex: null,
         resolution: [600, 600],
+        blurOffset:6,
+        pixelOffset:0.5
     },
     prefix_vertex + common_vertex_main,
     prefix_frag + `
         uniform float time;
         uniform vec2 resolution;
         uniform sampler2D buff_tex;
+        uniform float blurOffset;
+        uniform float pixelOffset;
 
         void main() {
 
             vec2 uv = vUv/2.0;
             vec2 halfpixel = 0.5 / (resolution.xy * 2.0);
             float time_offset = (sin(time*4.) + 1.)/2.;
-            float blur_offset = 6. * time_offset;
+            float blur_offset = blurOffset;
             //blur_offset = 0.;
         
             vec4 sum;
@@ -168,12 +178,18 @@ const WaveMaterial =  shaderMaterial(
         time: 0,
         buff_tex: null,
         resolution: [600, 600],
+        wavePara:[10.,0.8,0.1],
+        waveCenter:[0.5,0.9],
+        textureDistortFac:40.
     },
     prefix_vertex + common_vertex_main,
     prefix_frag + `
     uniform float time;
     uniform vec2 resolution;
     uniform sampler2D buff_tex;
+    uniform vec3 wavePara;
+    uniform vec2 waveCenter;
+    uniform float textureDistortFac;
     #define iTime time
     #define iChannel0 buff_tex
     #define iResolution resolution
@@ -188,10 +204,12 @@ const WaveMaterial =  shaderMaterial(
         float CurrentTime = (iTime)*(offset);    
         
         vec3 WaveParams = vec3(10.0, 0.8, 0.1);// distance,height,time
-        
+        WaveParams = wavePara;
+
         float ratio = iResolution.y/iResolution.x;
            
         vec2 WaveCentre = vec2(0.5, 0.9);
+        WaveCentre = waveCenter;
         WaveCentre.y *= ratio; 
        
         vec2 texCoord = gl_FragCoord.xy / iResolution.xy;    
@@ -217,11 +235,11 @@ const WaveMaterial =  shaderMaterial(
             vec2 DiffTexCoord = normalize(texCoord - WaveCentre);         
             
             //Perform the distortion and reduce the effect over time
-            texCoord += ((DiffTexCoord * DiffTime) / (CurrentTime * Dist * 40.0));
+            texCoord += ((DiffTexCoord * DiffTime) / (CurrentTime * Dist * textureDistortFac));
             Color = texture(iChannel0, texCoord);
             
             //Blow out the color and reduce the effect over time
-            Color += (Color * ScaleDiff) / (CurrentTime * Dist * 40.0);
+            Color += (Color * ScaleDiff) / (CurrentTime * Dist * textureDistortFac);
 
             outputCol = ScaleDiff;
             
@@ -244,6 +262,12 @@ const ParticleMaterial = shaderMaterial(
         resolution:[600,600],
         time:0,
         buff_tex:null,
+        base_color:[0.2,0.3,0.8],
+        speed:1,
+        burstRange:150,
+        length:0.0035,
+        particle_amount:250.,
+        center:[0.5,0.95]
     },
     prefix_vertex + common_vertex_main,
     hash_functions + prefix_frag + `
@@ -254,17 +278,26 @@ const ParticleMaterial = shaderMaterial(
     #define iChannel0 buff_tex
     #define iResolution resolution
 
-    const vec3 base_color = vec3(0.2, 0.3, 0.8);
-    const float speed = 1.;
-    const float burstRange = 150.;
-    const float length = 0.0035;
+    uniform vec3 base_color;
+    uniform float speed;
+    uniform float burstRange;
+    uniform float length;
+    uniform float particle_amount;
+    uniform vec2 center;
+
+    // const vec3 base_color = vec3(0.2, 0.3, 0.8);
+    // const float speed = 1.;
+    // const float burstRange = 150.;
+    // const float length = 0.0035;
+    // const float particleAmount = 250.;
+    // const vec2 center = vec2(0.5,0.95);
 
     vec3 particleEffects(in vec2 fragCoord,in vec2 center){
         center = iResolution.xy*center;
 
         float c0 = 0., c1 = 0.;
     
-        for(float i = 0.; i < 250.; ++i) {
+        for(float i = 0.; i < particle_amount; ++i) {
             float t = speed*iTime + hash11(i);
     
             // # use time generate noise,the parameter is just the seed number
@@ -317,26 +350,39 @@ const ProceduralLightMaterial  = shaderMaterial(
         resolution:[600,600],
         time:0,
         buff_tex:null,
+        light_distance:200,
+        light_expotential_factor:16,
+        light_mix_factor:0.5,
+        light_center:[0.5,0.5],
+        DEPTH:1.,
+        depth_offset:[1,1]
     },
     prefix_vertex + common_vertex_main,
     prefix_frag + `
-    
+
+    uniform float time;
+    uniform vec2 resolution;
+    uniform sampler2D buff_tex;
+    uniform float light_distance;
+    uniform float light_expotential_factor;
+    uniform float light_mix_factor;
+    uniform vec2 light_center;
+    uniform float DEPTH;
+    #define iTime time
+    #define iChannel0 buff_tex
+    #define iResolution resolution
+    uniform vec2 depth_offset;
+
     // by Nikos Papadopoulos, 4rknova / 2013
     // Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
 
     #define ENABLE_LIGHTING
     #define ENABLE_SPECULAR
 
-    #define OFFSET_X 1
-    #define OFFSET_Y 1
-    #define DEPTH	 1.
-
-    uniform float time;
-    uniform vec2 resolution;
-    uniform sampler2D buff_tex;
-    #define iTime time
-    #define iChannel0 buff_tex
-    #define iResolution resolution
+    //#define OFFSET_X 1
+    //#define OFFSET_Y 1
+    #define OFFSET_X int(depth_offset.x)
+    #define OFFSET_Y int(depth_offset.y)
 
     vec3 texsample(const int x, const int y, in vec2 fragCoord)
     {
@@ -369,13 +415,16 @@ const ProceduralLightMaterial  = shaderMaterial(
         vec3 n = normal(fragCoord);
 
     #ifdef ENABLE_LIGHTING
-        vec3 lp = vec3(vec2(iResolution.x*0.5,iResolution.y*( 0.1 + (cos(iTime) + 1.)/2.)*0.88) , 200.); //iMouse.xy
+
+        //animated_position = vec2(iResolution.x*0.5,iResolution.y*( 0.1 + (cos(iTime) + 1.)/2.)*0.88);
+        
+        vec3 lp = vec3(iResolution.x*light_center.x,iResolution.y*light_center.y, light_distance); //iMouse.xy
         vec3 sp = vec3(fragCoord.xy, 0.);
         
         vec3 c = texsample(0, 0, fragCoord) * dot(n, normalize(lp - sp));
 
     #ifdef ENABLE_SPECULAR
-        float e = 16.;
+        float e = light_expotential_factor;
         vec3 ep = vec3(fragCoord.xy, 200.);
         c += pow(clamp(dot(normalize(reflect(lp - sp, n)), normalize(sp - ep)), 0., 1.), e);
     #endif /* ENABLE_SPECULAR */
@@ -385,7 +434,7 @@ const ProceduralLightMaterial  = shaderMaterial(
         
     #endif /* ENABLE_LIGHTING */
         
-        gl_FragColor = mix(texture(buff_tex,vUv),vec4(c, 1),0.5);
+        gl_FragColor = mix(texture(buff_tex,vUv),vec4(c, 1),light_mix_factor);
     }
 `)
 
@@ -445,6 +494,259 @@ const Interface = () => {
         
         return [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,particleScene]
     }, []) 
+
+    const { blurOffset,pixelOffset } = useControls('Blur',{
+        blurOffset: {
+          label: 'blur offset',
+          value: 6.,
+          min: 0,
+          max: 100,
+          step: 0.01,
+          onChange: (v) => {
+            if(kawaseBlurMaterialRefA.current){
+                kawaseBlurMaterialRefA.current.uniforms.blurOffset.value =  v;
+            }
+            if(kawaseBlurMaterialRefB.current){
+                kawaseBlurMaterialRefB.current.uniforms.blurOffset.value =  v;
+            }
+            if(kawaseBlurMaterialRefC.current){
+                kawaseBlurMaterialRefC.current.uniforms.blurOffset.value =  v;
+            }
+            if(kawaseBlurMaterialRefD.current){
+                kawaseBlurMaterialRefD.current.uniforms.blurOffset.value =  v;
+            }
+          }
+        },
+    
+        pixelOffset: {
+          label: 'pixel offset',
+          value: 0.5,
+          min: 0,
+          max: 10.,
+          step: 0.01,
+          onChange: (v) => {
+            if(kawaseBlurMaterialRefA.current){
+                kawaseBlurMaterialRefA.current.uniforms.pixelOffset.value =  v;
+            }
+            if(kawaseBlurMaterialRefB.current){
+                kawaseBlurMaterialRefB.current.uniforms.pixelOffset.value =  v;
+            }
+            if(kawaseBlurMaterialRefC.current){
+                kawaseBlurMaterialRefC.current.uniforms.pixelOffset.value =  v;
+            }
+            if(kawaseBlurMaterialRefD.current){
+                kawaseBlurMaterialRefD.current.uniforms.pixelOffset.value =  v;
+            }
+          }
+        },
+    })
+
+    const {wavePara,waveCenter,textureDistortFactor,} = useControls('Wave',{
+
+        wavePara: {
+            label: 'wave parameters',
+            value: {
+                x:10.,
+                y:0.8,
+                z:0.1
+            },
+            step: 0.01,
+            onChange: (v) => {
+                if(waveMaterialRef.current && waveMaterialRef.current.uniforms.wavePara && waveFBO){
+                    waveMaterialRef.current.uniforms.wavePara.value = [v.x,v.y,v.z];
+                }
+            }
+        },
+
+          waveCenter:{
+            label:'wave center',
+            value:{
+                x:0.5,
+                y:0.9
+            },
+            step:0.01,
+            onChange:(v) =>{
+                if(waveMaterialRef.current){
+                    waveMaterialRef.current.uniforms.waveCenter.value = new THREE.Vector2(v.x,v.y);
+                }
+
+            }
+
+          },
+
+          textureDistortFactor:{
+            label:'distortion factor',
+            value:40,
+            min:0.00001,
+            max:1000,
+            step:0.001,
+            onChange:(v)=>{
+                if(waveMaterialRef.current){
+                    waveMaterialRef.current.uniforms.textureDistortFac.value = v;
+                }
+            }
+          }
+    })
+
+    const {base_color,speed,burstRange,length,particle_amount,center} = useControls('Particle',{
+        base_color:{
+            label:'base color',
+            value: {
+                r:0.2*255,
+                g:0.3*255,
+                b:0.8*255,
+            },
+            onChange:(v)=>{
+                if(particleMaterialRef.current){
+                    particleMaterialRef.current.uniforms.base_color.value = [v.r/255.,v.g/255.,v.b/255];
+                }
+            }
+        },
+
+        speed:{
+            label:'particle speed',
+            value: 1.,
+            min:0.,
+            max:100.,
+            step:0.01,
+            onChange:(v)=>{
+                if(particleMaterialRef.current){
+                    particleMaterialRef.current.uniforms.speed.value = v;
+                }
+            }
+        },
+
+        burstRange:{
+            label:'burst range',
+            value: 150.,
+            min:0.,
+            max:1000.,
+            step:0.01,
+            onChange:(v)=>{
+                if(particleMaterialRef.current){
+                    particleMaterialRef.current.uniforms.burstRange.value = v;
+                }
+            }
+        },
+
+        particle_amount:{
+            label:'particle number',
+            value: 250.,
+            min:0.,
+            max:5000,
+            step:1,
+            onChange:(v)=>{
+                if(particleMaterialRef.current){
+                    particleMaterialRef.current.uniforms.particle_amount.value = v;
+                }
+            }
+        },
+
+        center:{
+            label:'burst center',
+            value: {
+                x:0.5,
+                y:0.95
+            },
+            min:0.,
+            max:1,
+            step:0.001,
+            onChange:(v)=>{
+                if(particleMaterialRef.current){
+                    particleMaterialRef.current.uniforms.center.value = [v.x,v.y];
+                }
+            }
+        },
+
+    })
+
+    const {light_distance,light_expotential_factor,light_mix_factor,light_center} = useControls('Light',{
+
+        light_distance:{
+            label:'light distance',
+            value: 200.,
+            min:0.,
+            max:5000.,
+            step:0.01,
+            onChange:(v)=>{
+                if(proceduralLightMaterialRef.current){
+                    proceduralLightMaterialRef.current.uniforms.light_distance.value = v;
+                }
+            }
+        },
+
+        light_expotential_factor:{
+            label:'light exp factor',
+            value: 16.,
+            min:0.,
+            max:100.,
+            step:0.01,
+            onChange:(v)=>{
+                if(proceduralLightMaterialRef.current){
+                    proceduralLightMaterialRef.current.uniforms.light_expotential_factor.value = v;
+                }
+            }
+        },
+
+        light_mix_factor:{
+            label:'particle number',
+            value: 0.5,
+            min:0.,
+            max:1.,
+            step:0.01,
+            onChange:(v)=>{
+                if(proceduralLightMaterialRef.current){
+                    proceduralLightMaterialRef.current.uniforms.light_mix_factor.value = v;
+                }
+            }
+        },
+
+        light_center:{
+            label:'light center',
+            value: {
+                x:0.5,
+                y:0.5,
+            },
+            min:0.,
+            max:1.,
+            step:0.01,
+            onChange:(v)=>{
+                if(proceduralLightMaterialRef.current){
+                    proceduralLightMaterialRef.current.uniforms.light_center.value = [v.x,v.y];
+                }
+            }
+        },
+
+        depth_offset:{
+            label:'depth offset',
+            value:{
+                x:1,
+                y:1,
+            },
+            min:0,
+            max:100,
+            step:1,
+            onChange:(v)=>{
+                if(proceduralLightMaterialRef.current){
+                    proceduralLightMaterialRef.current.uniforms.depth_offset.value = [v.x,v.y];
+                }
+            }
+        },
+
+        light_depth:{
+            label:'material depth',
+            value:1,
+            min:0.01,
+            max:100.,
+            step:0.01,
+            onChange:(v)=>{
+                if(proceduralLightMaterialRef.current){
+                    proceduralLightMaterialRef.current.uniforms.DEPTH.value = v;
+                }
+            }
+        }
+    })
+      
 
     // #
     useEffect(()=>{

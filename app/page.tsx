@@ -2,7 +2,6 @@
 'use client'
 import Image from 'next/image'
 import { Effect } from './Effect'
-import { Stats } from "https://cdn.skypack.dev/@react-three/drei/Stats";
 
 export default function Home() {
   return (
