@@ -34,3 +34,7 @@ body {
   transform: translate(-50%, calc(-50% + 1px)) scale(0.748);
   transform-origin: center;
 }
+
+#leva__root > div{
+  width: 360px;
+}

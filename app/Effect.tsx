@@ -6,6 +6,7 @@ import { ShaderMaterial, TextureLoader } from 'three';
 import * as THREE from 'three'
 import { Stats } from '@react-three/drei'
 import { useControls } from 'leva'
+import { animated, useSpring } from '@react-spring/web'
 
 
 const prefix_vertex = `
@@ -93,6 +94,65 @@ vec3 hash33(vec3 p3) {
 }
 `
 
+const TextureTransformMaterial = shaderMaterial(
+    {
+        time: 0,
+        buff_tex: null,
+        contact_tex:null,
+        resolution: [600, 600],
+        blurOffset:6.,
+        pixelOffset:0.5,
+        scale_transform:1.,
+        translation_transform:[0.,0.]
+    },
+    prefix_vertex + common_vertex_main,
+    prefix_frag + `
+        uniform float time;
+        uniform vec2 resolution;
+        uniform sampler2D buff_tex;
+        uniform sampler2D contact_tex;
+        uniform vec2 translation_transform;
+        uniform float scale_transform;
+
+        // from the book of shader
+        mat2 scale(vec2 _scale){
+            return mat2(_scale.x,0.0,
+                        0.0,_scale.y);
+        }
+
+        vec4 roughClampTexture(in vec2 translate,in float scale,in float threshold){
+            if(vUv.x>translate.x/scale + threshold && vUv.x< translate.x/scale + 1./scale - threshold){
+                if(vUv.y>translate.y/scale + threshold && vUv.y< translate.y/scale + 1./scale - threshold){
+                    vec4 inputCol = texture(contact_tex,(vUv - translate/scale)*scale);
+                    return inputCol;
+                }
+            }
+
+            return vec4(0.);
+        }
+
+        void main() {
+            vec2 wpUV = vUv;
+            vec2 ctUV = vUv;
+            float downScale = scale_transform;
+
+
+            ctUV -= 0.5;
+            ctUV = ctUV*scale(vec2(downScale));
+            ctUV += 0.5;
+
+            vec2 real_translate = translation_transform  + vec2(1.,1.);
+            vec2 translate = vec2((1.-1./downScale)*(downScale/2.) * real_translate.x,(1.-1./downScale)*(downScale/2.)* real_translate.y);
+            ctUV += translate;
+
+            vec4 contactCol = roughClampTexture(translate,downScale,0.003);
+            
+            vec4 wallpaperCol = texture(buff_tex,wpUV);
+            gl_FragColor = mix(wallpaperCol,contactCol,contactCol.a);
+        }
+    `
+)
+
 // # dual kawase blur downscale sample shader pass
 const BlurDownSampleMaterial = shaderMaterial(
     {
@@ -110,19 +170,18 @@ const BlurDownSampleMaterial = shaderMaterial(
         uniform float blurOffset;
         uniform float pixelOffset;
     
+        #define sampleScale (1. + blurOffset*0.1)
+
         void main() {
-            vec2 uv = vUv*2.0;
-            vec2 halfpixel = pixelOffset / (resolution.xy / 2.0);
-            float time_offset = (sin(time*4.) + 1.)/2.;
-            float blur_offset = blurOffset;
-            //blur_offset = 0.;
+            vec2 uv = vUv*sampleScale;
+            vec2 halfpixel = pixelOffset / (resolution.xy / sampleScale);
         
             vec4 sum;
             sum = texture(buff_tex, uv) * 4.0;
-            sum += texture(buff_tex, uv - halfpixel.xy * blur_offset);
-            sum += texture(buff_tex, uv + halfpixel.xy * blur_offset);
-            sum += texture(buff_tex, uv + vec2(halfpixel.x, -halfpixel.y) * blur_offset);
-            sum += texture(buff_tex, uv - vec2(halfpixel.x, -halfpixel.y) * blur_offset);
+            sum += texture(buff_tex, uv - halfpixel.xy * blurOffset);
+            sum += texture(buff_tex, uv + halfpixel.xy * blurOffset);
+            sum += texture(buff_tex, uv + vec2(halfpixel.x, -halfpixel.y) * blurOffset);
+            sum += texture(buff_tex, uv - vec2(halfpixel.x, -halfpixel.y) * blurOffset);
         
             gl_FragColor = sum / 8.0;
         }
@@ -147,24 +206,23 @@ const BlurUpSampleMaterial = shaderMaterial(
         uniform float blurOffset;
         uniform float pixelOffset;
 
+        #define sampleScale (1. + blurOffset*0.1)
+
         void main() {
 
-            vec2 uv = vUv/2.0;
-            vec2 halfpixel = 0.5 / (resolution.xy * 2.0);
-            float time_offset = (sin(time*4.) + 1.)/2.;
-            float blur_offset = blurOffset;
-            //blur_offset = 0.;
+            vec2 uv = vUv/sampleScale;
+            vec2 halfpixel = pixelOffset / (resolution.xy * sampleScale);
         
             vec4 sum;
             
-            sum =  texture(buff_tex, uv +vec2(-halfpixel.x * 2.0, 0.0) * blur_offset);
-            sum += texture(buff_tex, uv + vec2(-halfpixel.x, halfpixel.y) * blur_offset) * 2.0;
-            sum += texture(buff_tex, uv + vec2(0.0, halfpixel.y * 2.0) * blur_offset);
-            sum += texture(buff_tex, uv + vec2(halfpixel.x, halfpixel.y) * blur_offset) * 2.0;
-            sum += texture(buff_tex, uv + vec2(halfpixel.x * 2.0, 0.0) * blur_offset);
-            sum += texture(buff_tex, uv + vec2(halfpixel.x, -halfpixel.y) * blur_offset) * 2.0;
-            sum += texture(buff_tex, uv + vec2(0.0, -halfpixel.y * 2.0) * blur_offset);
-            sum += texture(buff_tex, uv + vec2(-halfpixel.x, -halfpixel.y) * blur_offset) * 2.0;
+            sum =  texture(buff_tex, uv +vec2(-halfpixel.x * 2.0, 0.0) * blurOffset);
+            sum += texture(buff_tex, uv + vec2(-halfpixel.x, halfpixel.y) * blurOffset) * 2.0;
+            sum += texture(buff_tex, uv + vec2(0.0, halfpixel.y * 2.0) * blurOffset);
+            sum += texture(buff_tex, uv + vec2(halfpixel.x, halfpixel.y) * blurOffset) * 2.0;
+            sum += texture(buff_tex, uv + vec2(halfpixel.x * 2.0, 0.0) * blurOffset);
+            sum += texture(buff_tex, uv + vec2(halfpixel.x, -halfpixel.y) * blurOffset) * 2.0;
+            sum += texture(buff_tex, uv + vec2(0.0, -halfpixel.y * 2.0) * blurOffset);
+            sum += texture(buff_tex, uv + vec2(-halfpixel.x, -halfpixel.y) * blurOffset) * 2.0;
         
             gl_FragColor = sum / 12.0;
         }
@@ -180,7 +238,8 @@ const WaveMaterial =  shaderMaterial(
         resolution: [600, 600],
         wavePara:[10.,0.8,0.1],
         waveCenter:[0.5,0.9],
-        textureDistortFac:40.
+        textureDistortFac:40.,
+        waveFactor:0.,
     },
     prefix_vertex + common_vertex_main,
     prefix_frag + `
@@ -193,6 +252,7 @@ const WaveMaterial =  shaderMaterial(
     #define iTime time
     #define iChannel0 buff_tex
     #define iResolution resolution
+    uniform float waveFactor;
 
     float rand(vec2 co){
         return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
@@ -200,8 +260,12 @@ const WaveMaterial =  shaderMaterial(
 
     vec4 waveEffect(in vec2 uv){
         //Sawtooth function to pulse from centre.
-        float offset = (iTime- floor(iTime))/iTime;
-        float CurrentTime = (iTime)*(offset);    
+        // float offset = (iTime- floor(iTime))/iTime;
+        // float CurrentTime = (iTime)*(offset);    
+        float fac = waveFactor;
+        float offset = (fac- floor(fac))/fac;
+        float CurrentTime = (fac)*(offset);   
+
         
         vec3 WaveParams = vec3(10.0, 0.8, 0.1);// distance,height,time
         WaveParams = wavePara;
@@ -264,10 +328,11 @@ const ParticleMaterial = shaderMaterial(
         buff_tex:null,
         base_color:[0.2,0.3,0.8],
         speed:1,
-        burstRange:150,
+        burstRange:250,
         length:0.0035,
         particle_amount:250.,
-        center:[0.5,0.95]
+        center:[0.5,0.95],
+        pusleFactor:0.,
     },
     prefix_vertex + common_vertex_main,
     hash_functions + prefix_frag + `
@@ -284,6 +349,7 @@ const ParticleMaterial = shaderMaterial(
     uniform float length;
     uniform float particle_amount;
     uniform vec2 center;
+    uniform float pusleFactor;
 
     // const vec3 base_color = vec3(0.2, 0.3, 0.8);
     // const float speed = 1.;
@@ -296,8 +362,16 @@ const ParticleMaterial = shaderMaterial(
         center = iResolution.xy*center;
 
         float c0 = 0., c1 = 0.;
+
+        // pulse effect from https://www.shadertoy.com/view/ldycR3
+        float fac = 1. + pusleFactor;
+        float r = (fac+1.)/2.;
+        float a = pow(r, 2.0);
+        float b = sin(r * 0.8 - 1.6);
+        float c = sin(r - 0.010);
+        float s = sin(a - fac * 3.0 + b) * c;
     
-        for(float i = 0.; i < particle_amount; ++i) {
+        for(float i = 0.; i < particle_amount*s; ++i) {
             float t = speed*iTime + hash11(i);
     
             // # use time generate noise,the parameter is just the seed number
@@ -351,11 +425,12 @@ const ProceduralLightMaterial  = shaderMaterial(
         time:0,
         buff_tex:null,
         light_distance:200,
-        light_expotential_factor:16,
+        light_expotential_factor:12,
         light_mix_factor:0.5,
         light_center:[0.5,0.5],
         DEPTH:1.,
-        depth_offset:[1,1]
+        depth_offset:[1,1],
+        top_light_strength:1.
     },
     prefix_vertex + common_vertex_main,
     prefix_frag + `
@@ -372,6 +447,7 @@ const ProceduralLightMaterial  = shaderMaterial(
     #define iChannel0 buff_tex
     #define iResolution resolution
     uniform vec2 depth_offset;
+    uniform float top_light_strength;
 
     // by Nikos Papadopoulos, 4rknova / 2013
     // Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License.
@@ -418,15 +494,18 @@ const ProceduralLightMaterial  = shaderMaterial(
 
         //animated_position = vec2(iResolution.x*0.5,iResolution.y*( 0.1 + (cos(iTime) + 1.)/2.)*0.88);
         
+        vec3 lp0 = vec3(iResolution.x*0.5,iResolution.y*0.95, light_distance); //iMouse.xy
         vec3 lp = vec3(iResolution.x*light_center.x,iResolution.y*light_center.y, light_distance); //iMouse.xy
         vec3 sp = vec3(fragCoord.xy, 0.);
         
         vec3 c = texsample(0, 0, fragCoord) * dot(n, normalize(lp - sp));
+        c += texsample(0, 0, fragCoord) * dot(n, normalize(lp0 - sp)) * top_light_strength;
 
     #ifdef ENABLE_SPECULAR
         float e = light_expotential_factor;
         vec3 ep = vec3(fragCoord.xy, 200.);
         c += pow(clamp(dot(normalize(reflect(lp - sp, n)), normalize(sp - ep)), 0., 1.), e);
+        c += pow(clamp(dot(normalize(reflect(lp0 - sp, n)), normalize(sp - ep)), 0., 1.), e) * top_light_strength;
     #endif /* ENABLE_SPECULAR */
         
     #else
@@ -438,11 +517,12 @@ const ProceduralLightMaterial  = shaderMaterial(
     }
 `)
 
-extend({BlurDownSampleMaterial,BlurUpSampleMaterial,WaveMaterial,ParticleMaterial,ProceduralLightMaterial})
+extend({TextureTransformMaterial,BlurDownSampleMaterial,BlurUpSampleMaterial,WaveMaterial,ParticleMaterial,ProceduralLightMaterial})
 
 declare global {
     namespace JSX {
         interface IntrinsicElements {
+            'textureTransformMaterial':React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
             'blurDownSampleMaterial': React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
             'blurUpSampleMaterial': React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
             'waveMaterial': React.DetailedHTMLProps<React.HTMLAttributes<ShaderMaterial>, ShaderMaterial>;
@@ -456,10 +536,13 @@ const Interface = () => {
 
     const wp = useLoader(TextureLoader, './wallpaper.png')
     const ct = useLoader(TextureLoader, './contact.png')
+    console.log(ct)
+    //ct.wrapS=ct.wrapT=
 
     // # the renderer's context
     const {size,gl,scene,camera} = useThree()
     // # create Material ref for 'uniforms input'
+    const textureTransformMaterialRef = useRef<ShaderMaterial | null>(null)
     const kawaseBlurMaterialRefA = useRef<ShaderMaterial | null>(null)
     const kawaseBlurMaterialRefB = useRef<ShaderMaterial | null>(null)
     const kawaseBlurMaterialRefC = useRef<ShaderMaterial | null>(null)
@@ -476,6 +559,7 @@ const Interface = () => {
         type: THREE.FloatType,
     };
     // # create FBO for different render pass
+    const textureTransformFBO = useFBO(size.width,size.height,FBOSettings);
     const kawaseBlurFBOA = useFBO(size.width,size.height,FBOSettings);
     const kawaseBlurFBOB = useFBO(size.width,size.height,FBOSettings);
     const kawaseBlurFBOC = useFBO(size.width,size.height,FBOSettings);
@@ -484,7 +568,8 @@ const Interface = () => {
     const particleFBO = useFBO(size.width,size.height,FBOSettings)
 
     // # create scenes for different FBOS
-    const [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,particleScene] = useMemo(() => {
+    const [textureTransformScene,kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,particleScene] = useMemo(() => {
+        const textureTransformScene = new THREE.Scene()
         const kawaseBlurSceneA = new THREE.Scene()
         const kawaseBlurSceneB = new THREE.Scene()
         const kawaseBlurSceneC = new THREE.Scene()
@@ -492,8 +577,39 @@ const Interface = () => {
         const waveScene = new THREE.Scene()
         const particleScene = new THREE.Scene()
         
-        return [kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,particleScene]
+        return [textureTransformScene,kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,particleScene]
     }, []) 
+
+    const {scale_transform,translation_transform} = useControls('Transform',{
+        scale_transform:{
+            lable:'scale',
+            value: 1.,
+            min: 0,
+            max: 10,
+            onChange: (v) => {
+                if(textureTransformMaterialRef.current){
+                    textureTransformMaterialRef.current.uniforms.scale_transform.value =  1./v;
+                }
+            }
+        },
+
+        translation_transform:{
+            lable:'transform',
+            value: {
+                x:0.,
+                y:0.
+            },
+            min: -10,
+            max: 10,
+            onChange: (v) => {
+                if(textureTransformMaterialRef.current){
+                    textureTransformMaterialRef.current.uniforms.translation_transform.value =  v;
+                }
+            }
+        },
+
+
+    })
 
     const { blurOffset,pixelOffset } = useControls('Blur',{
         blurOffset: {
@@ -541,7 +657,21 @@ const Interface = () => {
         },
     })
 
-    const {wavePara,waveCenter,textureDistortFactor,} = useControls('Wave',{
+    const {wavePara,waveCenter,textureDistortFactor,waveFactor} = useControls('Wave',{
+
+        waveFactor:{
+            label:'wave animation factor',
+            value:0.,
+            min:0.,
+            max:10.,
+            step:0.01,
+            onChange:(v)=>{
+                if(waveMaterialRef.current){
+                    waveMaterialRef.current.uniforms.waveFactor.value = v;
+                }
+            }
+        },
+
 
         wavePara: {
             label: 'wave parameters',
@@ -588,7 +718,8 @@ const Interface = () => {
           }
     })
 
-    const {base_color,speed,burstRange,length,particle_amount,center} = useControls('Particle',{
+    const {base_color,speed,burstRange,length,particle_amount,center,pusleFactor} = useControls('Particle',{
+        
         base_color:{
             label:'base color',
             value: {
@@ -599,6 +730,31 @@ const Interface = () => {
             onChange:(v)=>{
                 if(particleMaterialRef.current){
                     particleMaterialRef.current.uniforms.base_color.value = [v.r/255.,v.g/255.,v.b/255];
+                }
+            }
+        },
+        pusleFactor:{
+            label:'pusle animation factor',
+            value: 0.,
+            min:0.,
+            max:10.,
+            step:0.01,
+            onChange:(v)=>{
+                if(particleMaterialRef.current){
+                    particleMaterialRef.current.uniforms.pusleFactor.value = v;
+                }
+            }
+        },
+
+        length:{
+            label:'particle size',
+            value: 35.,
+            min:0.,
+            max:10000.,
+            step:0.01,
+            onChange:(v)=>{
+                if(particleMaterialRef.current){
+                    particleMaterialRef.current.uniforms.length.value = v/10000;
                 }
             }
         },
@@ -618,7 +774,7 @@ const Interface = () => {
 
         burstRange:{
             label:'burst range',
-            value: 150.,
+            value: 250.,
             min:0.,
             max:1000.,
             step:0.01,
@@ -660,7 +816,7 @@ const Interface = () => {
 
     })
 
-    const {light_distance,light_expotential_factor,light_mix_factor,light_center} = useControls('Light',{
+    const {light_distance,light_expotential_factor,light_mix_factor,light_center,top_light_strength} = useControls('Light',{
 
         light_distance:{
             label:'light distance',
@@ -675,9 +831,22 @@ const Interface = () => {
             }
         },
 
+        top_light_strength:{
+            label:'top light strength',
+            value: 0.,
+            min:0.,
+            max:1.,
+            step:0.01,
+            onChange:(v)=>{
+                if(proceduralLightMaterialRef.current){
+                    proceduralLightMaterialRef.current.uniforms.top_light_strength.value = v;
+                }
+            }
+        },
+
         light_expotential_factor:{
             label:'light exp factor',
-            value: 16.,
+            value: 12.,
             min:0.,
             max:100.,
             step:0.01,
@@ -750,6 +919,19 @@ const Interface = () => {
 
     // #
     useEffect(()=>{
+        if(kawaseBlurMaterialRefA.current){
+            kawaseBlurMaterialRefA.current.uniforms.resolution.value = new THREE.Vector2(size.width,size.height);
+        }
+        if(kawaseBlurMaterialRefB.current){
+            kawaseBlurMaterialRefB.current.uniforms.resolution.value = new THREE.Vector2(size.width,size.height);
+        }
+        if(kawaseBlurMaterialRefC.current){
+            kawaseBlurMaterialRefC.current.uniforms.resolution.value = new THREE.Vector2(size.width,size.height);
+        }
+        if(kawaseBlurMaterialRefD.current){
+            kawaseBlurMaterialRefD.current.uniforms.resolution.value = new THREE.Vector2(size.width,size.height);
+        }
+
         if(waveMaterialRef.current){
             waveMaterialRef.current.uniforms.resolution.value = new THREE.Vector2(size.width,size.height);
         }
@@ -767,10 +949,20 @@ const Interface = () => {
     // #
     useFrame(({clock})=>{
         const time = clock.getElapsedTime()
-        console.log('123')
+        if(textureTransformMaterialRef.current){
+            textureTransformMaterialRef.current.uniforms.buff_tex.value = wp;
+            textureTransformMaterialRef.current.uniforms.contact_tex.value = ct;
+            textureTransformMaterialRef.current.uniforms.time.value = time;
+
+            // KawaseBlur Pass 1 Buffer
+            gl.setRenderTarget(textureTransformFBO);
+            gl.render(textureTransformScene,camera)
+            gl.setRenderTarget(null)
+        }
+
         // DownSample - Pass 1
         if(kawaseBlurMaterialRefA.current){
-            kawaseBlurMaterialRefA.current.uniforms.buff_tex.value = wp;
+            kawaseBlurMaterialRefA.current.uniforms.buff_tex.value = textureTransformFBO.texture;
             kawaseBlurMaterialRefA.current.uniforms.time.value = time;
 
             // KawaseBlur Pass 1 Buffer
@@ -845,6 +1037,12 @@ const Interface = () => {
     })
     return (
     <>
+        {createPortal(<>
+          <Plane args={[2, 2]}>
+             <textureTransformMaterial ref={textureTransformMaterialRef}  />
+          </Plane>
+        </>, textureTransformScene)}
+
         {createPortal(<>
           <Plane args={[2, 2]}>
              <blurDownSampleMaterial ref={kawaseBlurMaterialRefA}  />
