@@ -37,7 +37,7 @@ export default function Home() {
             transformOrigin: 'center',
             cursor:'pointer'
         }}/>
-        <Image
+        <img
           className='phone-img'
           src="/ip14_pro.png"
           width={876/2}
