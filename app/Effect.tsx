@@ -257,7 +257,7 @@ const WaveMaterial =  shaderMaterial(
         wavePara:[10.,0.8,0.1],
         waveCenter:[0.5,0.9],
         textureDistortFac:40.,
-        waveFactor:0.,
+        waveFactor:-0.2,
     },
     prefix_vertex + common_vertex_main,
     prefix_frag + `
@@ -713,8 +713,8 @@ const Interface = ({isTriggered}:InterfaceProps) => {
 
         waveFactor:{
             label:'wave animation factor',
-            value:0.,
-            min:0.,
+            value:-0.2,
+            min:-10.,
             max:10.,
             step:0.01,
             onChange:(v)=>{
@@ -1201,12 +1201,12 @@ const Interface = ({isTriggered}:InterfaceProps) => {
     const [pulseProps, springApiPulse] = useSpring(() => ({
         from: { 
             particlePulseFactor:0.,
-            wavePulseFactor:0.,
+            wavePulseFactor:-0.2,
             particle_amount:500.,
         },
         to: {
             particlePulseFactor: isTriggered ? 5.3:0.,
-            wavePulseFactor:isTriggered?0.97:0.,
+            wavePulseFactor:isTriggered?0.97:-0.2,
             particle_amount:isTriggered?0.:500.,
         },
         config:{ mass:1,friction:40,tension:90},
