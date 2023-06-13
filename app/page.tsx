@@ -20,8 +20,8 @@ export default function Home() {
           src="https://ghbtns.com/github-btn.html?user=martinrgb&repo=iOS17_Namedrop_R3F&type=star&count=true&size=large" 
           style={{
             position: 'absolute',
-            left:'92px',
-            top: '8px',
+            left:'16px',
+            bottom: '16px',
           }}
           width="170" height="30" title="GitHub"></iframe>
 
