@@ -6,7 +6,8 @@ import { ShaderMaterial, TextureLoader } from 'three';
 import * as THREE from 'three'
 import { Stats } from '@react-three/drei'
 import { useControls } from 'leva'
-import { animated, useSpring } from '@react-spring/web'
+import { useSpringValue, animated,SpringValue } from '@react-spring/web'
+import { useChain, useSpring, useSpringRef } from 'react-spring';
 
 
 const prefix_vertex = `
@@ -93,7 +94,8 @@ vec3 hash33(vec3 p3) {
     return vec3(pcg3d(uvec3(p3)))/4294967296.;
 }
 `
-
+// ##################################### 2D Transform Shader #####################################
+// # noticed that there is a tiny Y-Axis strench in Animation Process
 const TextureTransformMaterial = shaderMaterial(
     {
         time: 0,
@@ -102,8 +104,9 @@ const TextureTransformMaterial = shaderMaterial(
         resolution: [600, 600],
         blurOffset:6.,
         pixelOffset:0.5,
-        scale_transform:1.,
-        translation_transform:[0.,0.]
+        scale_transform:0.3,
+        translation_transform:[0.,0.],
+        strench_y_factor:0.,
     },
     prefix_vertex + common_vertex_main,
     prefix_frag + `
@@ -113,18 +116,23 @@ const TextureTransformMaterial = shaderMaterial(
         uniform sampler2D contact_tex;
         uniform vec2 translation_transform;
         uniform float scale_transform;
+        uniform float strench_y_factor;
 
-        // from the book of shader
+        // # from the book of shaders
         mat2 scale(vec2 _scale){
             return mat2(_scale.x,0.0,
                         0.0,_scale.y);
         }
 
-        vec4 roughClampTexture(in vec2 translate,in float scale,in float threshold){
-            if(vUv.x>translate.x/scale + threshold && vUv.x< translate.x/scale + 1./scale - threshold){
-                if(vUv.y>translate.y/scale + threshold && vUv.y< translate.y/scale + 1./scale - threshold){
-                    vec4 inputCol = texture(contact_tex,(vUv - translate/scale)*scale);
-                    return inputCol;
+        // # I didn't use this method,it will cause a border in tblr border
+        // # the Three.js's texture wrapping didn't contain 'GL_CLAMP_TO_BORDER'
+        // # discussion see here: https://discourse.threejs.org/t/how-clamp-edge-wrapping-a-texture-image/40938
+
+        vec4 roughClampTexture(in vec2 translate,in float scale,in vec2 uv,in float threshold){
+            if(vUv.x > ((1.-1./scale)/2. + translate.x + threshold) && vUv.x < ((1.-1./scale)/2. + translate.x + 1./scale - threshold) ){
+                if(vUv.y > ((1.-1./scale)/2. + translate.y + threshold) && vUv.y < ((1.-1./scale)/2. + translate.y + 1./scale - threshold) ){
+                    vec4 col = texture(contact_tex,vec2(uv.x,uv.y));
+                    return col;
                 }
             }
 
@@ -132,28 +140,36 @@ const TextureTransformMaterial = shaderMaterial(
         }
 
         void main() {
-            vec2 wpUV = vUv;
-            vec2 ctUV = vUv;
+            vec2 uv = vec2(vUv.x,vUv.y/(1.0 + 0.03 * strench_y_factor));
+            vec2 wpUV = uv;
+            vec2 ctUV = uv;
             float downScale = scale_transform;
 
+            // # 2D translate
+            vec2 translate = translation_transform ;
+            ctUV -= translate;
 
+            // # 2D scale
             ctUV -= 0.5;
-            ctUV = ctUV*scale(vec2(downScale));
+            ctUV = ctUV*scale(vec2(scale_transform));
             ctUV += 0.5;
 
-            vec2 real_translate = translation_transform  + vec2(1.,1.);
-            vec2 translate = vec2((1.-1./downScale)*(downScale/2.) * real_translate.x,(1.-1./downScale)*(downScale/2.)* real_translate.y);
-            ctUV += translate;
-
-            vec4 contactCol = roughClampTexture(translate,downScale,0.003);
+            //vec4 contactCol = roughClampTexture(translate,scale_transform,ctUV,0.003);
+            vec4 contactCol;
+            contactCol = texture(contact_tex,ctUV);
             
-            vec4 wallpaperCol = texture(buff_tex,wpUV);
+            vec4 wallpaperCol = texture(buff_tex,vec2(uv.x,uv.y));
             gl_FragColor = mix(wallpaperCol,contactCol,contactCol.a);
         }
     `
 )
 
-// # dual kawase blur downscale sample shader pass
+// ##################################### dual kawase blur downscale sample shader pass #####################################
+// # iOS progressive blur ShaderToy:https://www.shadertoy.com/view/DltSzr
+// # Noticed that the upScale/downScale Sample's value should related to blurOffset
+// # when blurOffset is zero,all upScale & downScale Factor should be 1.;
+// # #define sampleScale (1. + blurOffset*0.1)
+// # Otherwise when the blurOffset's value is zero,the image is still blurred caused by down/up sample
 const BlurDownSampleMaterial = shaderMaterial(
     {
       time: 0,
@@ -229,8 +245,10 @@ const BlurUpSampleMaterial = shaderMaterial(
     `
 )
 
+// ##################################### Ripple(Wave) Shader #####################################
 // # the wave shader,the core concept is use distance() function to compare the fragCoord & wave_center,
-// # if the conditions are met,we use a pow() function to generate a wave shape in mathmatic,then map the function to the clamped distance(as x input)
+// # if the conditions are met,we use a pow() function to generate a wave shape in mathematic,then map the function to the clamped distance(as x input)
+// # what the iOS namedrop animation's curve should be a 'acceleration curve' in mathematic,but it didnt implementation in this shader
 const WaveMaterial =  shaderMaterial(
     {
         time: 0,
@@ -319,6 +337,7 @@ const WaveMaterial =  shaderMaterial(
     }
 `);
 
+// ##################################### Particle Shader #####################################
 // # compare to standard 'centered grid sampling' & 'staggered grid sampling'
 // # this looks like a random sample in different grid 
 const ParticleMaterial = shaderMaterial(
@@ -330,7 +349,7 @@ const ParticleMaterial = shaderMaterial(
         speed:1,
         burstRange:250,
         length:0.0035,
-        particle_amount:250.,
+        particle_amount:500.,
         center:[0.5,0.95],
         pusleFactor:0.,
     },
@@ -350,13 +369,6 @@ const ParticleMaterial = shaderMaterial(
     uniform float particle_amount;
     uniform vec2 center;
     uniform float pusleFactor;
-
-    // const vec3 base_color = vec3(0.2, 0.3, 0.8);
-    // const float speed = 1.;
-    // const float burstRange = 150.;
-    // const float length = 0.0035;
-    // const float particleAmount = 250.;
-    // const vec2 center = vec2(0.5,0.95);
 
     vec3 particleEffects(in vec2 fragCoord,in vec2 center){
         center = iResolution.xy*center;
@@ -419,6 +431,10 @@ const ParticleMaterial = shaderMaterial(
 `
 );
 
+// ##################################### Light Shader #####################################
+// # Of course I think iOS use a simple way to do this,just a circle blurred png img
+// # to the top light area,one way is use SDF functions to create a capsule shape,another way is use texture to map the lighting area.
+// # but i didn't use these two ways.
 const ProceduralLightMaterial  = shaderMaterial(
     {
         resolution:[600,600],
@@ -494,17 +510,25 @@ const ProceduralLightMaterial  = shaderMaterial(
 
         //animated_position = vec2(iResolution.x*0.5,iResolution.y*( 0.1 + (cos(iTime) + 1.)/2.)*0.88);
         
-        vec3 lp0 = vec3(iResolution.x*0.5,iResolution.y*0.95, light_distance); //iMouse.xy
+        // # lp0 is the top light
+        
+        vec3 lp0 = vec3(iResolution.x*0.5,iResolution.y*1., light_distance); //iMouse.xy
         vec3 lp = vec3(iResolution.x*light_center.x,iResolution.y*light_center.y, light_distance); //iMouse.xy
         vec3 sp = vec3(fragCoord.xy, 0.);
         
         vec3 c = texsample(0, 0, fragCoord) * dot(n, normalize(lp - sp));
+        
+        // # add influence of top light
+        
         c += texsample(0, 0, fragCoord) * dot(n, normalize(lp0 - sp)) * top_light_strength;
 
     #ifdef ENABLE_SPECULAR
+
+        // # specular highlights -> https://en.wikibooks.org/wiki/GLSL_Programming/GLUT/Specular_Highlights
+
         float e = light_expotential_factor;
         vec3 ep = vec3(fragCoord.xy, 200.);
-        c += pow(clamp(dot(normalize(reflect(lp - sp, n)), normalize(sp - ep)), 0., 1.), e);
+        c += pow(clamp(dot(normalize(reflect(lp - sp, n)), normalize(sp - ep)), 0., 1.), e) /2.;
         c += pow(clamp(dot(normalize(reflect(lp0 - sp, n)), normalize(sp - ep)), 0., 1.), e) * top_light_strength;
     #endif /* ENABLE_SPECULAR */
         
@@ -532,16 +556,23 @@ declare global {
     }
 }
 
-const Interface = () => {
+interface InterfaceProps {
+    isTriggered:boolean
+}
+
+const Interface = ({isTriggered}:InterfaceProps) => {
+
+     // #####################################  load image tex #####################################
 
     const wp = useLoader(TextureLoader, './wallpaper.png')
     const ct = useLoader(TextureLoader, './contact.png')
-    console.log(ct)
-    //ct.wrapS=ct.wrapT=
+   
+    // #####################################  the renderer's context #####################################
 
-    // # the renderer's context
     const {size,gl,scene,camera} = useThree()
-    // # create Material ref for 'uniforms input'
+
+    // ##################################### create Material ref for 'uniforms input' #####################################
+
     const textureTransformMaterialRef = useRef<ShaderMaterial | null>(null)
     const kawaseBlurMaterialRefA = useRef<ShaderMaterial | null>(null)
     const kawaseBlurMaterialRefB = useRef<ShaderMaterial | null>(null)
@@ -551,6 +582,8 @@ const Interface = () => {
     const particleMaterialRef = useRef<ShaderMaterial | null>(null)
     const proceduralLightMaterialRef = useRef<ShaderMaterial | null>(null)
 
+    // ##################################### create FBO for different render pass #####################################
+
     const FBOSettings ={
         format: THREE.RGBAFormat,
         //encoding:THREE.GammaEncoding,
@@ -558,34 +591,38 @@ const Interface = () => {
         magFilter: THREE.LinearFilter,
         type: THREE.FloatType,
     };
-    // # create FBO for different render pass
+
     const textureTransformFBO = useFBO(size.width,size.height,FBOSettings);
     const kawaseBlurFBOA = useFBO(size.width,size.height,FBOSettings);
     const kawaseBlurFBOB = useFBO(size.width,size.height,FBOSettings);
     const kawaseBlurFBOC = useFBO(size.width,size.height,FBOSettings);
     const kawaseBlurFBOD = useFBO(size.width,size.height,FBOSettings);
     const waveFBO = useFBO(size.width,size.height,FBOSettings)
-    const particleFBO = useFBO(size.width,size.height,FBOSettings)
+    const lightFBO = useFBO(size.width,size.height,FBOSettings)
 
-    // # create scenes for different FBOS
-    const [textureTransformScene,kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,particleScene] = useMemo(() => {
+    // ##################################### create scenes for different FBOS #####################################
+
+    const [textureTransformScene,kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,lightScene] = useMemo(() => {
         const textureTransformScene = new THREE.Scene()
         const kawaseBlurSceneA = new THREE.Scene()
         const kawaseBlurSceneB = new THREE.Scene()
         const kawaseBlurSceneC = new THREE.Scene()
         const kawaseBlurSceneD = new THREE.Scene()
         const waveScene = new THREE.Scene()
-        const particleScene = new THREE.Scene()
+        const lightScene = new THREE.Scene()
         
-        return [textureTransformScene,kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,particleScene]
+        return [textureTransformScene,kawaseBlurSceneA,kawaseBlurSceneB,kawaseBlurSceneC,kawaseBlurSceneD,waveScene,lightScene]
     }, []) 
 
-    const {scale_transform,translation_transform} = useControls('Transform',{
+    // ##################################### Leva GUI part #####################################
+
+    const {scale_transform,translation_transform,strench_y_factor} = useControls('Transform',{
         scale_transform:{
             lable:'scale',
-            value: 1.,
+            value: 0.3,
             min: 0,
             max: 10,
+            step:0.001,
             onChange: (v) => {
                 if(textureTransformMaterialRef.current){
                     textureTransformMaterialRef.current.uniforms.scale_transform.value =  1./v;
@@ -593,14 +630,29 @@ const Interface = () => {
             }
         },
 
+        strench_y_factor:{
+            label:'strench y factor',
+            value:0.,
+            min:0.,
+            max:10.,
+            step:0.01,
+            onChange: (v) => {
+                if(textureTransformMaterialRef.current){
+                    textureTransformMaterialRef.current.uniforms.strench_y_factor.value =  v;
+                }
+            }
+        
+        },
+
         translation_transform:{
             lable:'transform',
             value: {
                 x:0.,
-                y:0.
+                y:3.0
             },
             min: -10,
             max: 10,
+            step:0.001,
             onChange: (v) => {
                 if(textureTransformMaterialRef.current){
                     textureTransformMaterialRef.current.uniforms.translation_transform.value =  v;
@@ -614,7 +666,7 @@ const Interface = () => {
     const { blurOffset,pixelOffset } = useControls('Blur',{
         blurOffset: {
           label: 'blur offset',
-          value: 6.,
+          value: 0.,
           min: 0,
           max: 100,
           step: 0.01,
@@ -787,7 +839,7 @@ const Interface = () => {
 
         particle_amount:{
             label:'particle number',
-            value: 250.,
+            value: 500.,
             min:0.,
             max:5000,
             step:1,
@@ -858,7 +910,7 @@ const Interface = () => {
         },
 
         light_mix_factor:{
-            label:'particle number',
+            label:'light mix factor',
             value: 0.5,
             min:0.,
             max:1.,
@@ -915,9 +967,9 @@ const Interface = () => {
             }
         }
     })
-      
 
-    // #
+    // ##################################### add resolution value into each buffers #####################################
+
     useEffect(()=>{
         if(kawaseBlurMaterialRefA.current){
             kawaseBlurMaterialRefA.current.uniforms.resolution.value = new THREE.Vector2(size.width,size.height);
@@ -946,9 +998,11 @@ const Interface = () => {
 
     },[])
     
-    // #
+    // ##################################### ShaderPass: #####################################
+    // # 2D Transform -> Blur -> Wave -> Light -> Particle
     useFrame(({clock})=>{
         const time = clock.getElapsedTime()
+
         if(textureTransformMaterialRef.current){
             textureTransformMaterialRef.current.uniforms.buff_tex.value = wp;
             textureTransformMaterialRef.current.uniforms.contact_tex.value = ct;
@@ -1016,25 +1070,213 @@ const Interface = () => {
             gl.setRenderTarget(null)
         }
 
-        if(particleMaterialRef.current){
-            particleMaterialRef.current.uniforms.buff_tex.value = waveFBO.texture
-            particleMaterialRef.current.uniforms.time.value = time;
+        // Procedural Lighting Pass
+        if(proceduralLightMaterialRef.current){
+            proceduralLightMaterialRef.current.uniforms.buff_tex.value = waveFBO.texture; //lightFBO.texture
+            proceduralLightMaterialRef.current.uniforms.time.value = time;
             
-            // Particle Pass Buffer
-            gl.setRenderTarget(particleFBO);
-            gl.render(particleScene,camera)
+            // Light Pass Buffer
+            gl.setRenderTarget(lightFBO);
+            gl.render(lightScene,camera)
             gl.setRenderTarget(null)
         }
 
-        // ProceduralLightMaterialRef Pass
-        if(proceduralLightMaterialRef.current){
-            proceduralLightMaterialRef.current.uniforms.buff_tex.value = particleFBO.texture; //particleFBO.texture
-            proceduralLightMaterialRef.current.uniforms.time.value = time;
+        // Particle Pass
+        if(particleMaterialRef.current){
+            particleMaterialRef.current.uniforms.buff_tex.value = lightFBO.texture
+            particleMaterialRef.current.uniforms.time.value = time;
         }
-
-
-        // to do : swap material
     })
+
+    // ##################################### React-Spring Animation Part: #####################################
+
+    // light [back] animation
+    const [lightFade, setLightFade] = useSpring(() => ({
+        lightMixFactor:0.6,
+        config:{mass:1,friction:35,tension:200},
+        onChange: (v) => {
+                if(proceduralLightMaterialRef.current){
+                    proceduralLightMaterialRef.current.uniforms.light_mix_factor.value =  v.value.lightMixFactor;
+                }
+        },
+        immediate:isTriggered,
+    }))
+
+    // light animation
+    const [lightPropsGo, springApiLightGo] = useSpring(() => ({
+        from: { 
+            lightCenter:[0.5,0.],
+            lightMixFactor:0.,
+            topLightStrength:0.},
+        to: {
+            lightCenter: isTriggered ? [0.5,0.95]:[0.5,0.],
+            lightMixFactor: isTriggered? 0.7:0.,
+            topLightStrength: isTriggered? 1.:0.,
+        },
+        config:{mass:1,friction:40,tension:200},
+        onChange: (v) => {
+            if(proceduralLightMaterialRef.current){
+                proceduralLightMaterialRef.current.uniforms.light_center.value =  v.value.lightCenter;
+                proceduralLightMaterialRef.current.uniforms.top_light_strength.value =  v.value.topLightStrength;
+                if(v.value.lightMixFactor < 0.6){
+                    proceduralLightMaterialRef.current.uniforms.top_light_strength.value =  v.value.topLightStrength;
+                }
+                else{
+                    setLightFade({lightMixFactor:0.});
+                }
+            }
+
+        },
+        immediate:!isTriggered,
+    }),[isTriggered])
+
+    // # strench Y animation
+    const [texStrenchYGo, springApiTexStrenchYGo] = useSpring(() => ({
+        from: { strench_y_factor:0.},
+        to: {
+            strench_y_factor: isTriggered? 1.:0.,
+        },
+        config:{mass:1,friction:40,tension:200},
+        onChange: (v) => {
+
+            if(textureTransformMaterialRef.current){
+                textureTransformMaterialRef.current.uniforms.strench_y_factor.value =  v.value.strench_y_factor;
+            }
+            
+        },
+        immediate:!isTriggered,
+    }),[isTriggered])
+
+    // # blur [back] animation
+    const [blurFade, setBlurFade] = useSpring(() => ({
+        blurOffset:5.5,
+        config:{mass:1,friction:35,tension:200},
+        onChange: (v) => {
+            if( kawaseBlurMaterialRefA.current && 
+                kawaseBlurMaterialRefB.current &&
+                kawaseBlurMaterialRefC.current &&
+                kawaseBlurMaterialRefD.current
+            ){
+                kawaseBlurMaterialRefA.current.uniforms.blurOffset.value = v.value.blurOffset;
+                kawaseBlurMaterialRefB.current.uniforms.blurOffset.value = v.value.blurOffset;
+                kawaseBlurMaterialRefC.current.uniforms.blurOffset.value = v.value.blurOffset;
+                kawaseBlurMaterialRefD.current.uniforms.blurOffset.value = v.value.blurOffset;
+            }
+        },
+    }))
+
+    // # blur animation
+    const [blurPropsGo, springApiBlurGo] = useSpring(() => ({
+        from: { 
+            blurOffset:0.,
+        },
+        to: {
+            blurOffset: isTriggered ? 6.:0.,
+        },
+        config:{ mass:1,friction:40,tension:80},
+        onChange: (v) => {
+            if( kawaseBlurMaterialRefA.current && 
+                kawaseBlurMaterialRefB.current &&
+                kawaseBlurMaterialRefC.current &&
+                kawaseBlurMaterialRefD.current
+            ){
+                if(v.value.blurOffset < 5.5){
+                    kawaseBlurMaterialRefA.current.uniforms.blurOffset.value = v.value.blurOffset;
+                    kawaseBlurMaterialRefB.current.uniforms.blurOffset.value = v.value.blurOffset;
+                    kawaseBlurMaterialRefC.current.uniforms.blurOffset.value = v.value.blurOffset;
+                    kawaseBlurMaterialRefD.current.uniforms.blurOffset.value = v.value.blurOffset;
+                }
+                else{
+                    setBlurFade({blurOffset:0.});
+                    setStrenchFade({strench_y_factor:0.});
+
+                }
+            }
+        },
+        dealy:isTriggered?300:0,
+        immediate:!isTriggered,
+    }),[isTriggered])
+
+     // # particle & wave pulse animation
+    const [pulseProps, springApiPulse] = useSpring(() => ({
+        from: { 
+            particlePulseFactor:0.,
+            wavePulseFactor:0.,
+            particle_amount:500.,
+        },
+        to: {
+            particlePulseFactor: isTriggered ? 5.3:0.,
+            wavePulseFactor:isTriggered?0.97:0.,
+            particle_amount:isTriggered?0.:500.,
+        },
+        config:{ mass:1,friction:40,tension:90},
+        onChange: (v) => {
+            if(particleMaterialRef.current){
+                particleMaterialRef.current.uniforms.pusleFactor.value =  v.value.particlePulseFactor;
+                particleMaterialRef.current.uniforms.particle_amount.value =  v.value.particle_amount;
+            }
+
+            if(waveMaterialRef.current){
+                waveMaterialRef.current.uniforms.waveFactor.value = v.value.wavePulseFactor;
+            }
+        },
+        delay:isTriggered?450:0,
+        immediate:!isTriggered,
+    }),[isTriggered])
+
+    // # strench Y [back] animation
+    const [strenchFade, setStrenchFade] = useSpring(() => ({
+        strench_y_factor:1.,
+        config:{mass:1,friction:35,tension:200},
+        onChange: (v) => {
+                if(textureTransformMaterialRef.current){
+                    textureTransformMaterialRef.current.uniforms.strench_y_factor.value =  v.value.strench_y_factor;
+                }
+        },
+    }))
+
+    // # scale animation
+    const [scaleProps, springApiScale] = useSpring(() => ({
+        from: { scaleTransform:0.3},
+        to: {
+          scaleTransform: isTriggered ? 1.04:0.3,
+        },
+        config:{mass:1,friction:35,tension:150},
+        onChange: (v) => {
+            if(textureTransformMaterialRef.current){
+                textureTransformMaterialRef.current.uniforms.scale_transform.value =  1./v.value.scaleTransform;
+            }
+        },
+        delay:isTriggered?650:0,
+        immediate:!isTriggered,
+    }),[isTriggered])
+
+    // # translation animation
+    const [translationProps, springApiTranslation] = useSpring(() => ({
+        from: { translationTransform:[0.,3.]},
+        to: {translationTransform: isTriggered ? [0.,0.]:[0.,3.],},
+        config:{ mass:1,friction:40,tension:250},
+        onChange: (v) => {
+            if(textureTransformMaterialRef.current){
+                textureTransformMaterialRef.current.uniforms.translation_transform.value =  v.value.translationTransform;
+            }
+        },
+        delay:isTriggered?300:0,
+        immediate:!isTriggered,
+    }),[isTriggered])
+
+    // ### recovery the state of the animation ###
+    useEffect(()=>{
+        if(isTriggered){
+            setLightFade({lightMixFactor:0.6});
+            setBlurFade({blurOffset:5.});
+            setStrenchFade({strench_y_factor:1.});
+        }
+    },[isTriggered])
+
+
+    // # createPortal ->  scene is inside a React createPortal and is completely isolated, you can have your own cameras in there
+    // # check https://github.com/pmndrs/drei
     return (
     <>
         {createPortal(<>
@@ -1074,16 +1316,16 @@ const Interface = () => {
         </>, waveScene)}
 
         {createPortal(<>
-          <Plane args={[2, 2]}>
-             <particleMaterial ref={particleMaterialRef}  />
-          </Plane>
-        </>, particleScene)}
+
+            <Plane args={[2, 2]}>
+                <proceduralLightMaterial ref={proceduralLightMaterialRef}  />
+            </Plane>
+        </>, lightScene)}
 
         <Plane args={[2, 2]}>
-            <proceduralLightMaterial ref={proceduralLightMaterialRef}  />
+             <particleMaterial ref={particleMaterialRef}  />
         </Plane>
         
-
     </>
     )
 
@@ -1091,12 +1333,20 @@ const Interface = () => {
 
 export const Effect = (props:any) =>{
 
+  const [isTriggered,setIsTriggered] = useState(false);
 
   return(
-  <Canvas className={props.className} style={{...props.style}}>
-    <ambientLight />
-    <Interface />
-    <Stats />
-  </Canvas>
+    <>
+        <Canvas 
+        onClick={()=>{
+            setIsTriggered(!isTriggered);
+        }}
+        className={props.className} style={{...props.style}}>
+            <ambientLight />
+            <Interface isTriggered={isTriggered} />
+            <Stats />
+        </Canvas>
+    </>
+
   )
 }
