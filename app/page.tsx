@@ -22,6 +22,7 @@ export default function Home() {
             position: 'absolute',
             left:'16px',
             bottom: '16px',
+            userSelect:'none'
           }}
           width="170" height="30" title="GitHub"></iframe>
 
