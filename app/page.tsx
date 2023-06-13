@@ -39,7 +39,7 @@ export default function Home() {
         }}/>
         <img
           className='phone-img'
-          src="/ip14_pro.png"
+          src="https://raw.githubusercontent.com/MartinRGB/iOS17_Namedrop_R3F/main/public/ip14_pro.png"
           width={876/2}
           height={1774/2}
           alt="Picture of the author"
