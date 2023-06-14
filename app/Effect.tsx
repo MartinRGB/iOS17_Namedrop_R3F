@@ -309,8 +309,24 @@ const WaveMaterial =  shaderMaterial(
         if ((Dist <= ((CurrentTime) + (WaveParams.z))) && (Dist >= ((CurrentTime) - (WaveParams.z)))) 
         {
             //The pixel offset distance based on the input parameters
-            float Diff = (Dist - CurrentTime); 
-            float ScaleDiff = (1.0 - pow(abs(Diff * WaveParams.x), WaveParams.y)); 
+            //float Diff = Dist - CurrentTime;
+            float Diff = 1. - exp(Dist - CurrentTime); 
+            
+            float ScaleDiff;
+
+            if(Diff*WaveParams.x > 0.){
+                ScaleDiff = (1.0 - pow((Diff * WaveParams.x), WaveParams.y)); 
+                ScaleDiff = exp(-Diff*WaveParams.x*4.);
+                //exp(-x*4.);
+            }
+            else{
+                ScaleDiff = (1.0 - pow(abs(Diff * WaveParams.x), WaveParams.y)); 
+                // 1 - abs(x)^y
+            }
+
+            //ScaleDiff = (1.0 - pow(abs(Diff * WaveParams.x), WaveParams.y)); 
+
+
             float DiffTime = (Diff  * ScaleDiff);
             
             //The direction of the distortion
@@ -322,7 +338,7 @@ const WaveMaterial =  shaderMaterial(
             
             //Blow out the color and reduce the effect over time
             Color += (Color * ScaleDiff) / (CurrentTime * Dist * textureDistortFac);
-
+            
             outputCol = ScaleDiff;
             
         } 
@@ -1021,6 +1037,18 @@ const Interface = ({isTriggered}:InterfaceProps) => {
             gl.setRenderTarget(null)
         }
 
+        // // WaveMaterial Pass
+        // if(waveMaterialRef.current){
+        //     waveMaterialRef.current.uniforms.buff_tex.value = textureTransformFBO.texture
+        //     waveMaterialRef.current.uniforms.time.value = time;
+
+        //     // Wave Pass Buffer
+        //     gl.setRenderTarget(waveFBO);
+        //     gl.render(waveScene,camera)
+        //     gl.setRenderTarget(null)
+        // }
+
+
         // DownSample - Pass 1
         if(kawaseBlurMaterialRefA.current){
             kawaseBlurMaterialRefA.current.uniforms.buff_tex.value = textureTransformFBO.texture;
@@ -1217,7 +1245,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
         },
         to: {
             particlePulseFactor: isTriggered ? 5.3:0.,
-            wavePulseFactor:isTriggered?0.97:-0.2,
+            wavePulseFactor:isTriggered?0.98:-0.2,
             particle_amount:isTriggered?0.:500.,
         },
         config:{ mass:1,friction:40,tension:90},
