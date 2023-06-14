@@ -123,8 +123,8 @@ const TextureTransformMaterial = shaderMaterial(
                         0.0,_scale.y);
         }
 
-        // # I didn't use this method,it will cause a border in tblr border
-        // # the Three.js's texture wrapping didn't contain 'GL_CLAMP_TO_BORDER'
+        // # it will cause a border in tblr border
+        // # the texture wrap mode of Three.js did not contain 'GL_CLAMP_TO_BORDER'
         // # discussion see here: https://discourse.threejs.org/t/how-clamp-edge-wrapping-a-texture-image/40938
 
         vec4 roughClampTexture(in vec2 translate,in float scale,in vec2 uv,in float threshold){
