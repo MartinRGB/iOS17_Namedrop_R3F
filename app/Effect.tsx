@@ -1,13 +1,12 @@
 'use client'
-import React, { createRef, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, createPortal, extend, useFrame, useLoader, useThree, invalidate } from '@react-three/fiber';
 import { Plane, shaderMaterial, useFBO } from '@react-three/drei';
 import { ShaderMaterial, TextureLoader } from 'three';
 import * as THREE from 'three'
 import { Stats } from '@react-three/drei'
 import { useControls } from 'leva'
-import { useSpringValue, animated,SpringValue } from '@react-spring/web'
-import { useChain, useSpring, useSpringRef } from 'react-spring';
+import { useSpring,  } from 'react-spring';
 
 
 const prefix_vertex = `
@@ -341,6 +340,7 @@ const WaveMaterial =  shaderMaterial(
 // ##################################### Particle Shader #####################################
 // # compare to standard 'centered grid sampling' & 'staggered grid sampling'
 // # this looks like a random sample in different grid 
+// # Use length to control the distance in the polar coordinate system and draw line particles
 const ParticleMaterial = shaderMaterial(
     {
         resolution:[600,600],
