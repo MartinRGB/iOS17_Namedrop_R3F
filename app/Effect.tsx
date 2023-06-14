@@ -94,7 +94,7 @@ vec3 hash33(vec3 p3) {
 }
 `
 // ##################################### 2D Transform Shader #####################################
-// # noticed that there is a tiny Y-Axis strench in Animation Process
+// # noticed that there is a tiny Y-Axis stretch in Animation Process
 const TextureTransformMaterial = shaderMaterial(
     {
         time: 0,
@@ -105,7 +105,7 @@ const TextureTransformMaterial = shaderMaterial(
         pixelOffset:0.5,
         scale_transform:0.3,
         translation_transform:[0.,0.],
-        strench_y_factor:0.,
+        stretch_y_factor:0.,
     },
     prefix_vertex + common_vertex_main,
     prefix_frag + `
@@ -115,7 +115,7 @@ const TextureTransformMaterial = shaderMaterial(
         uniform sampler2D contact_tex;
         uniform vec2 translation_transform;
         uniform float scale_transform;
-        uniform float strench_y_factor;
+        uniform float stretch_y_factor;
 
         // # from the book of shaders
         mat2 scale(vec2 _scale){
@@ -139,7 +139,7 @@ const TextureTransformMaterial = shaderMaterial(
         }
 
         void main() {
-            vec2 uv = vec2(vUv.x,vUv.y/(1.0 + 0.03 * strench_y_factor));
+            vec2 uv = vec2(vUv.x,vUv.y/(1.0 + 0.03 * stretch_y_factor));
             vec2 wpUV = uv;
             vec2 ctUV = uv;
             float downScale = scale_transform;
@@ -620,7 +620,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
 
     // ##################################### Leva GUI part #####################################
 
-    const {scale_transform,translation_transform,strench_y_factor} = useControls('Transform',{
+    const {scale_transform,translation_transform,stretch_y_factor} = useControls('Transform',{
         scale_transform:{
             lable:'scale',
             value: 0.3,
@@ -634,15 +634,15 @@ const Interface = ({isTriggered}:InterfaceProps) => {
             }
         },
 
-        strench_y_factor:{
-            label:'strench y factor',
+        stretch_y_factor:{
+            label:'stretch y factor',
             value:0.,
             min:0.,
             max:10.,
             step:0.01,
             onChange: (v) => {
                 if(textureTransformMaterialRef.current){
-                    textureTransformMaterialRef.current.uniforms.strench_y_factor.value =  v;
+                    textureTransformMaterialRef.current.uniforms.stretch_y_factor.value =  v;
                 }
             }
         
@@ -665,7 +665,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
         },
 
 
-    }) as {scale_transform:number,translation_transform:THREE.Vector2,strench_y_factor:number}
+    }) as {scale_transform:number,translation_transform:THREE.Vector2,stretch_y_factor:number}
 
     const { blurOffset,pixelOffset } = useControls('Blur',{
         blurOffset: {
@@ -1134,17 +1134,17 @@ const Interface = ({isTriggered}:InterfaceProps) => {
         immediate:!isTriggered,
     }),[isTriggered])
 
-    // # strench Y animation
-    const [texStrenchYGo, springApiTexStrenchYGo] = useSpring(() => ({
-        from: { strench_y_factor:0.},
+    // # stretch Y animation
+    const [texStretchYGo, springApiTexStretchYGo] = useSpring(() => ({
+        from: { stretch_y_factor:0.},
         to: {
-            strench_y_factor: isTriggered? 1.:0.,
+            stretch_y_factor: isTriggered? 1.:0.,
         },
         config:{mass:1,friction:40,tension:200},
         onChange: (v) => {
 
             if(textureTransformMaterialRef.current){
-                textureTransformMaterialRef.current.uniforms.strench_y_factor.value =  v.value.strench_y_factor;
+                textureTransformMaterialRef.current.uniforms.stretch_y_factor.value =  v.value.stretch_y_factor;
             }
             
         },
@@ -1192,7 +1192,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
                 }
                 else{
                     setBlurFade({blurOffset:0.});
-                    setStrenchFade({strench_y_factor:0.});
+                    setStretchFade({stretch_y_factor:0.});
 
                 }
             }
@@ -1228,13 +1228,13 @@ const Interface = ({isTriggered}:InterfaceProps) => {
         immediate:!isTriggered,
     }),[isTriggered])
 
-    // # strench Y [back] animation
-    const [strenchFade, setStrenchFade] = useSpring(() => ({
-        strench_y_factor:1.,
+    // # stretch Y [back] animation
+    const [stretchFade, setStretchFade] = useSpring(() => ({
+        stretch_y_factor:1.,
         config:{mass:1,friction:35,tension:200},
         onChange: (v) => {
                 if(textureTransformMaterialRef.current){
-                    textureTransformMaterialRef.current.uniforms.strench_y_factor.value =  v.value.strench_y_factor;
+                    textureTransformMaterialRef.current.uniforms.stretch_y_factor.value =  v.value.stretch_y_factor;
                 }
         },
     }))
@@ -1274,7 +1274,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
         if(isTriggered){
             setLightFade({lightMixFactor:0.6});
             setBlurFade({blurOffset:5.});
-            setStrenchFade({strench_y_factor:1.});
+            setStretchFade({stretch_y_factor:1.});
         }
     },[isTriggered])
 
