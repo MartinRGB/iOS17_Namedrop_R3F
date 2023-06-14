@@ -384,6 +384,8 @@ const ParticleMaterial = shaderMaterial(
         float b = sin(r * 0.8 - 1.6);
         float c = sin(r - 0.010);
         float s = sin(a - fac * 3.0 + b) * c;
+
+        vec3 partiCol;
     
         for(float i = 0.; i < particle_amount*s; ++i) {
             float t = speed*iTime + hash11(i);
@@ -400,7 +402,7 @@ const ParticleMaterial = shaderMaterial(
     
             vec2 p = center + t*v - fragCoord;
             // # the glow center
-            // c0 += 0.1*(1.-t)/(1. + 0.13*dot(p,p));
+            //c0 += 0.01*(1.-t)/(1. + 0.13*dot(p,p));
     
             p = p.yx;
             v = v.yx;
@@ -417,6 +419,7 @@ const ParticleMaterial = shaderMaterial(
             
             // # accumulate particles,
             c0 += (t)*b0*a;
+            
         }
     
         vec3 rgb = c0*base_color;
@@ -446,7 +449,7 @@ const ProceduralLightMaterial  = shaderMaterial(
         buff_tex:null,
         light_distance:200,
         light_expotential_factor:12,
-        light_mix_factor:0.5,
+        light_mix_factor:0.8,
         light_center:[0.5,0.5],
         DEPTH:1.,
         depth_offset:[1,1],
@@ -915,7 +918,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
 
         light_mix_factor:{
             label:'light mix factor',
-            value: 0.5,
+            value: 0.8,
             min:0.,
             max:1.,
             step:0.01,
@@ -1096,7 +1099,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
 
     // light [back] animation
     const [lightFade, setLightFade] = useSpring(() => ({
-        lightMixFactor:0.6,
+        lightMixFactor:0.8,
         config:{mass:1,friction:35,tension:200},
         onChange: (v) => {
                 if(proceduralLightMaterialRef.current){
@@ -1111,18 +1114,22 @@ const Interface = ({isTriggered}:InterfaceProps) => {
         from: { 
             lightCenter:[0.5,0.],
             lightMixFactor:0.,
-            topLightStrength:0.},
+            topLightStrength:0.,
+            lightExpFactor:12.
+        },
         to: {
             lightCenter: isTriggered ? [0.5,0.95]:[0.5,0.],
-            lightMixFactor: isTriggered? 0.7:0.,
+            lightMixFactor: isTriggered? 0.9:0.,
             topLightStrength: isTriggered? 1.:0.,
+            lightExpFactor: isTriggered? 6.:12.,
         },
         config:{mass:1,friction:40,tension:200},
         onChange: (v) => {
             if(proceduralLightMaterialRef.current){
                 proceduralLightMaterialRef.current.uniforms.light_center.value =  v.value.lightCenter;
                 proceduralLightMaterialRef.current.uniforms.top_light_strength.value =  v.value.topLightStrength;
-                if(v.value.lightMixFactor < 0.6){
+                proceduralLightMaterialRef.current.uniforms.light_expotential_factor.value =  v.value.lightExpFactor;
+                if(v.value.lightMixFactor < 0.8){
                     proceduralLightMaterialRef.current.uniforms.top_light_strength.value =  v.value.topLightStrength;
                 }
                 else{
@@ -1201,7 +1208,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
         immediate:!isTriggered,
     }),[isTriggered])
 
-     // # particle & wave pulse animation
+    // # particle & wave pulse animation
     const [pulseProps, springApiPulse] = useSpring(() => ({
         from: { 
             particlePulseFactor:0.,
@@ -1272,7 +1279,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
     // ### recovery the state of the animation ###
     useEffect(()=>{
         if(isTriggered){
-            setLightFade({lightMixFactor:0.6});
+            setLightFade({lightMixFactor:0.8});
             setBlurFade({blurOffset:5.});
             setStretchFade({stretch_y_factor:1.});
         }
