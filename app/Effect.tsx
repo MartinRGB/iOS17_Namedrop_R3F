@@ -338,6 +338,7 @@ const WaveMaterial =  shaderMaterial(
 `);
 
 // ##################################### Particle Shader #####################################
+// # https://www.shadertoy.com/view/DlySD3
 // # compare to standard 'centered grid sampling' & 'staggered grid sampling'
 // # this looks like a random sample in different grid 
 // # Use length to control the distance in the polar coordinate system and draw line particles
@@ -433,6 +434,8 @@ const ParticleMaterial = shaderMaterial(
 );
 
 // ##################################### Light Shader #####################################
+// # Normal Generator -> https://www.shadertoy.com/view/4ss3W7
+// # Control the light source -> https://www.shadertoy.com/view/4ss3W7
 // # Of course I think iOS use a simple way to do this,just a circle blurred png img
 // # to the top light area,one way is use SDF functions to create a capsule shape,another way is use texture to map the lighting area.
 // # but i didn't use these two ways.
@@ -662,7 +665,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
         },
 
 
-    })
+    }) as {scale_transform:number,translation_transform:THREE.Vector2,strench_y_factor:number}
 
     const { blurOffset,pixelOffset } = useControls('Blur',{
         blurOffset: {
@@ -708,7 +711,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
             }
           }
         },
-    })
+    }) as {blurOffset:number,pixelOffset:number}
 
     const {wavePara,waveCenter,textureDistortFactor,waveFactor} = useControls('Wave',{
 
@@ -769,7 +772,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
                 }
             }
           }
-    })
+    }) as {wavePara:THREE.Vector3,waveCenter:THREE.Vector2,textureDistortFactor:number,waveFactor:number}
 
     const {base_color,speed,burstRange,length,particle_amount,center,pusleFactor} = useControls('Particle',{
         
@@ -867,7 +870,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
             }
         },
 
-    })
+    }) as {base_color:THREE.Vector3,speed:number,burstRange:number,length:number,particle_amount:number,center:THREE.Vector2,pusleFactor:number}
 
     const {light_distance,light_expotential_factor,light_mix_factor,light_center,top_light_strength} = useControls('Light',{
 
@@ -967,7 +970,7 @@ const Interface = ({isTriggered}:InterfaceProps) => {
                 }
             }
         }
-    })
+    }) as {light_distance:number,light_expotential_factor:number,light_mix_factor:number,light_center:THREE.Vector2,top_light_strength:number,depth_offset:THREE.Vector2,light_depth:number}
 
     // ##################################### add resolution value into each buffers #####################################
 
