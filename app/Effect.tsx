@@ -246,6 +246,7 @@ const BlurUpSampleMaterial = shaderMaterial(
 )
 
 // ##################################### Ripple(Wave) Shader #####################################
+// # https://www.shadertoy.com/view/llj3Dz
 // # the wave shader,the core concept is use distance() function to compare the fragCoord & wave_center,
 // # if the conditions are met,we use a pow() function to generate a wave shape in mathematic,then map the function to the clamped distance(as x input)
 // # what the iOS namedrop animation's curve should be a 'acceleration curve' in mathematic,but it didnt implementation in this shader
