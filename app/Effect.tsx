@@ -539,6 +539,7 @@ const ProceduralLightMaterial  = shaderMaterial(
         vec3 lp = vec3(iResolution.x*light_center.x,iResolution.y*light_center.y, light_distance); //iMouse.xy
         vec3 sp = vec3(fragCoord.xy, 0.);
         
+        //float diff = max(dot(norm, lightDir), 0.0);
         vec3 c = texsample(0, 0, fragCoord) * dot(n, normalize(lp - sp));
         
         // # add influence of top light
@@ -551,6 +552,9 @@ const ProceduralLightMaterial  = shaderMaterial(
 
         float e = light_expotential_factor;
         vec3 ep = vec3(fragCoord.xy, 200.);
+        //vec3 viewDir = normalize(viewPos - FragPos);
+        //vec3 reflectDir = reflect(-lightDir, norm);  
+        //float spec = pow(max(dot(reflectDir,viewDir), 0.0), 32);
         c += pow(clamp(dot(normalize(reflect(lp - sp, n)), normalize(sp - ep)), 0., 1.), e) /2.;
         c += pow(clamp(dot(normalize(reflect(lp0 - sp, n)), normalize(sp - ep)), 0., 1.), e) * top_light_strength;
     #endif /* ENABLE_SPECULAR */
@@ -1036,18 +1040,6 @@ const Interface = ({isTriggered}:InterfaceProps) => {
             gl.render(textureTransformScene,camera)
             gl.setRenderTarget(null)
         }
-
-        // // WaveMaterial Pass
-        // if(waveMaterialRef.current){
-        //     waveMaterialRef.current.uniforms.buff_tex.value = textureTransformFBO.texture
-        //     waveMaterialRef.current.uniforms.time.value = time;
-
-        //     // Wave Pass Buffer
-        //     gl.setRenderTarget(waveFBO);
-        //     gl.render(waveScene,camera)
-        //     gl.setRenderTarget(null)
-        // }
-
 
         // DownSample - Pass 1
         if(kawaseBlurMaterialRefA.current){
